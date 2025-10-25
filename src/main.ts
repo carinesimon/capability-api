@@ -4,19 +4,26 @@ import { ValidationPipe } from '@nestjs/common';
 import * as express from 'express';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { cors: true });
+  const app = await NestFactory.create(AppModule);
 
-  // JSON pour tout (on ne valide PAS de signature HMAC ici)
-  app.use(express.json({ limit: '2mb' }));
+  const origins = (process.env.CORS_ORIGIN || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
 
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-    }),
-  );
+  app.enableCors({
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true); // SSR/vercel, healthchecks
+      if (origins.some(o => origin === o) || /\.vercel\.app$/.test(origin)) {
+        return cb(null, true);
+      }
+      cb(new Error(`CORS blocked: ${origin}`));
+    },
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  });
 
-  await app.listen(3000);
+  await app.listen(process.env.PORT || 3000, '0.0.0.0');
 }
 bootstrap();
