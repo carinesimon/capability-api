@@ -1,0 +1,501 @@
+// --- DATABASE CONFIG ---
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// --- MODELS ---
+
+// Utilisateurs : Setters, Closers, Admin
+model User {
+  id           String    @id @default(cuid())
+  firstName    String
+  lastName     String?
+  email        String    @unique
+  role         Role
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  passwordHash String?
+  lastLoginAt  DateTime?
+
+  // --- Relations ---
+  setterLeads Lead[] @relation("LeadSetter")
+  closerLeads Lead[] @relation("LeadCloser")
+
+  appointments Appointment[]  @relation("UserAppointments")
+  contracts    Contract[]
+  Availability Availability[]
+
+  // Nouvelles relations (optionnelles)
+  createdCallRequests CallRequest[] @relation("UserCreatedCallRequests")
+  callAttempts        CallAttempt[]
+
+  @@index([role, isActive])
+  @@index([createdAt])
+}
+
+// Prospects entrants — étapes du Kanban Prospects
+model Lead {
+  id String @id @default(cuid())
+
+  // Identité
+  firstName String
+  lastName  String?
+  email     String? @unique
+  phone     String?
+
+  // Métadonnées / source
+  tag    String?
+  source String? // "GHL", "CSV", "Manual", etc.
+
+  // Kanban (nouvel enum pipeline)
+  stage          LeadStage @default(LEADS_RECEIVED)
+  stageUpdatedAt DateTime  @default(now())
+
+  // Nouveau lien dynamique vers Stage (nullable pendant migration A)
+  stageId  String?
+  stageRef Stage?  @relation(fields: [stageId], references: [id])
+
+  // >>> Colonne libre (board)
+  boardColumnKey String? // identifiant d’une colonne “libre” (non mappée à un stage)
+  // <<<
+
+  // Montants
+  opportunityValue Float?
+  saleValue        Float?
+
+  // Assignations (Setter / Closer)
+  setterId String?
+  closerId String?
+  setter   User?   @relation("LeadSetter", fields: [setterId], references: [id])
+  closer   User?   @relation("LeadCloser", fields: [closerId], references: [id])
+
+  // Identifiant externe (GHL)
+  ghlContactId String? @unique
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  appointments Appointment[]
+  contracts    Contract[]
+
+  // Nouvelles relations (optionnelles)
+  callRequests CallRequest[]
+  callAttempts CallAttempt[]
+  leadEvents   LeadEvent[]      @relation("LeadToLeadEvent")
+  boardEvents  LeadBoardEvent[] @relation("LeadToLeadBoardEvent")
+
+  // Indexes existants/ajoutés
+  @@index([stage, stageUpdatedAt])
+  @@index([createdAt])
+  @@index([setterId])
+  @@index([closerId])
+  @@index([stage, setterId])
+  @@index([stage, closerId])
+  @@index([stage, createdAt])
+  @@index([stage, stageUpdatedAt, setterId])
+  @@index([stage, stageUpdatedAt, closerId])
+  // index pour stageId (utilisé au runtime une fois backfill fini)
+  @@index([stageId], map: "Lead_stageId_idx")
+  // index pour la colonne libre
+  @@index([boardColumnKey])
+}
+
+// Nouveau modèle : Stage dynamique
+model Stage {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  label     String
+  order     Int      @default(0)
+  color     String?
+  isWon     Boolean  @default(false)
+  isClosed  Boolean  @default(false)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // back relation
+  leads Lead[]
+}
+
+// Rendez-vous (RV0, RV1, RV2…)
+model Appointment {
+  id          String            @id @default(cuid())
+  provider    String            @default("INTERNAL")
+  externalId  String            @default(cuid())
+  type        AppointmentType
+  status      AppointmentStatus
+  scheduledAt DateTime
+  createdAt   DateTime          @default(now())
+
+  // Relations
+  leadId String?
+  lead   Lead?   @relation(fields: [leadId], references: [id])
+
+  userId String?
+  user   User?   @relation("UserAppointments", fields: [userId], references: [id])
+
+  @@unique([provider, externalId], name: "provider_externalId")
+  @@index([userId, type, scheduledAt])
+  @@index([userId, type, status, scheduledAt])
+  @@index([type, status, scheduledAt])
+  @@index([status, scheduledAt])
+  @@index([leadId, type, scheduledAt])
+  @@index([leadId, type, status, scheduledAt])
+}
+
+// Contrats générés par les closers
+model Contract {
+  id        String   @id @default(cuid())
+  amount    Float
+  deposit   Float?
+  monthly   Float?
+  total     Float
+  createdAt DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  leadId String?
+  lead   Lead?   @relation(fields: [leadId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([leadId, createdAt])
+}
+
+// Budget publicitaire (hebdo / mensuel)
+model Budget {
+  id         String       @id @default(cuid())
+  period     BudgetPeriod
+  amount     Float
+  weekStart  DateTime?
+  monthStart DateTime?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  @@index([period, weekStart])
+  @@index([period, monthStart])
+}
+
+// Disponibilités
+model Availability {
+  id     String    @id @default(cuid())
+  userId String
+  user   User      @relation(fields: [userId], references: [id])
+  day    DayOfWeek
+  part   DayPart
+
+  @@unique([userId, day, part])
+}
+
+// Paramètres simples
+model Setting {
+  id           Int      @id @default(1)
+  lastSetterId String?
+  updatedAt    DateTime @updatedAt
+}
+
+// ---------- Idempotence Webhooks ----------
+model WebhookEvent {
+  id          String    @id @default(cuid())
+  externalId  String    @unique
+  type        String
+  payloadHash String
+  status      String
+  error       String?
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+
+  @@index([type, receivedAt])
+}
+
+/**
+ * ===================== NOUVEAUX MODÈLES =====================
+ */
+
+model CallRequest {
+  id String @id @default(cuid())
+
+  leadId String
+  lead   Lead   @relation(fields: [leadId], references: [id])
+
+  createdById String?
+  createdBy   User?   @relation("UserCreatedCallRequests", fields: [createdById], references: [id])
+
+  channel     String?
+  requestedAt DateTime          @default(now())
+  scheduledAt DateTime?
+  status      CallRequestStatus @default(REQUESTED)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  callAttempts CallAttempt[]
+
+  @@index([leadId, requestedAt])
+  @@index([status, requestedAt])
+  @@index([createdAt])
+}
+
+model CallAttempt {
+  id String @id @default(cuid())
+
+  leadId String
+  lead   Lead   @relation(fields: [leadId], references: [id])
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  requestId String?
+  request   CallRequest? @relation(fields: [requestId], references: [id])
+
+  scheduledAt DateTime?
+  startedAt   DateTime
+  endedAt     DateTime?
+  durationSec Int?
+
+  outcome CallOutcome
+
+  notes     String?
+  createdAt DateTime @default(now())
+
+  @@index([leadId, startedAt])
+  @@index([userId, startedAt])
+  @@index([outcome, startedAt])
+  @@index([createdAt])
+}
+
+model AutomationEvent {
+  id           String     @id @default(cuid())
+  automationId String
+  automation   Automation @relation(fields: [automationId], references: [id])
+
+  contentType String?
+  payload     Json
+  payloadHash String
+  receivedAt  DateTime @default(now())
+
+  status String  @default("RECEIVED")
+  error  String?
+  result Json?
+
+  processedAt DateTime?
+
+  @@index([automationId, receivedAt])
+  @@index([status, receivedAt])
+  @@index([payloadHash])
+}
+
+// --- ENUMS ---
+
+enum Role {
+  SETTER
+  CLOSER
+  ADMIN
+}
+
+enum AppointmentType {
+  RV0
+  RV1
+  RV2
+}
+
+enum AppointmentStatus {
+  HONORED
+  POSTPONED
+  CANCELED
+  NO_SHOW
+  NOT_QUALIFIED
+}
+
+enum BudgetPeriod {
+  WEEKLY
+  MONTHLY
+}
+
+enum DayOfWeek {
+  MON
+  TUE
+  WED
+  THU
+  FRI
+  SAT
+  SUN
+}
+
+/**
+ * --- LeadStage pipeline (NOUVEAU) ---
+ */
+enum LeadStage {
+  LEADS_RECEIVED
+  CALL_REQUESTED
+  CALL_ATTEMPT
+  CALL_ANSWERED
+  SETTER_NO_SHOW
+  FOLLOW_UP
+
+  RV0_PLANNED
+  RV0_HONORED
+  RV0_NO_SHOW
+
+  RV1_PLANNED
+  RV1_HONORED
+  RV1_NO_SHOW
+  RV1_POSTPONED
+
+  RV2_PLANNED
+  RV2_HONORED
+  RV2_POSTPONED
+
+  NOT_QUALIFIED
+  LOST
+  WON
+}
+
+enum DayPart {
+  MORNING
+  AFTERNOON
+}
+
+enum CallRequestStatus {
+  REQUESTED
+  SCHEDULED
+  COMPLETED
+  CANCELED
+}
+
+enum CallOutcome {
+  ANSWERED
+  NO_ANSWER
+  BUSY
+  VOICEMAIL
+  WRONG_NUMBER
+}
+
+enum AutomationStatus {
+  OFF
+  DRY_RUN
+  ON
+}
+
+model Automation {
+  id          String           @id @default(cuid())
+  name        String
+  routeKey    String           @unique
+  status      AutomationStatus @default(ON)
+  mappingJson Json?
+  rulesJson   Json?
+  metaJson    Json?            // <--- AJOUT : pour { rrIndex: { setter, closer } }
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  events AutomationEvent[]
+}
+
+// ===================== MetricConfig (nouveau) =====================
+model MetricConfig {
+  id String @id @default(cuid())
+
+  /// Clé logique côté back/front (ex: "LEADS_RECEIVED", "CALL_ANSWERED", etc.)
+  key        String  @unique
+  /// Libellé affiché dans l’UI (éditable)
+  label      String
+  /// Chemin source des données (ex: "funnel.totals.leads")
+  sourcePath String
+  /// Ordre d’affichage (0..n)
+  order      Int     @default(0)
+  /// Permet de masquer la métrique au besoin
+  enabled    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([order])
+}
+
+// ---- Dashboard KPI configuration ----
+enum PipelineMetricKey {
+  LEADS_RECEIVED
+  CALL_REQUESTED
+  CALL_ATTEMPT
+  CALL_ANSWERED
+  SETTER_NO_SHOW
+  FOLLOW_UP
+
+  RV0_PLANNED
+  RV0_HONORED
+  RV0_NO_SHOW
+
+  RV1_PLANNED
+  RV1_HONORED
+  RV1_NO_SHOW
+  RV1_POSTPONED
+
+  RV2_PLANNED
+  RV2_HONORED
+  RV2_POSTPONED
+
+  WON
+}
+
+model DashboardMetricConfig {
+  id        String            @id @default(cuid())
+  key       PipelineMetricKey @unique
+  label     String
+  position  Int
+  visible   Boolean           @default(true)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@index([position])
+}
+
+/**
+ * =============== ProspectsColumnConfig (NOUVEAU) ===============
+ */
+model ProspectsColumnConfig {
+  id        String     @id @default(cuid())
+  label     String
+  order     Int        @default(0)
+  enabled   Boolean    @default(true)
+  stage     LeadStage?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@index([order])
+}
+
+model LeadBoardEvent {
+  id          String   @id @default(cuid())
+  leadId      String
+  columnKey   String
+  previousKey String?
+  movedAt     DateTime @default(now())
+
+  // 👇 relation nommée qui matche Lead.boardEvents
+  lead Lead @relation(name: "LeadToLeadBoardEvent", fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([movedAt])
+}
+
+model LeadEvent {
+  id         String   @id @default(cuid())
+  leadId     String
+  type       String
+  meta       Json?
+  occurredAt DateTime
+  createdAt  DateTime @default(now())
+
+  // 👇 relation nommée qui matche Lead.leadEvents
+  lead Lead @relation(name: "LeadToLeadEvent", fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([type, occurredAt])
+  @@index([leadId, occurredAt])
+}
