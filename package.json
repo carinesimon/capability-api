@@ -24,7 +24,7 @@
     "migrate:deploy": "prisma migrate deploy"
   },
   "prisma": {
-        "seed": "ts-node prisma/seed.ts"
+    "seed": "ts-node --transpile-only prisma/seed.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
