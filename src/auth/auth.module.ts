@@ -7,7 +7,10 @@ import { JwtStrategy } from './jwt.strategy';
 import { PrismaModule } from '../prisma/prisma.module';
 
 const jwtSecret = process.env.JWT_SECRET || 'dev-secret';
-const jwtExpires = process.env.JWT_EXPIRES || '2h';
+
+// Normalise JWT_EXPIRES en string | number (ex: "2h", "3600s" ou 3600)
+const rawExpires = process.env.JWT_EXPIRES ?? '2h';
+const jwtExpires: string | number = /^\d+$/.test(rawExpires) ? Number(rawExpires) : rawExpires;
 
 @Module({
   imports: [
