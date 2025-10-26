@@ -21,6 +21,7 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "postinstall": "prisma generate",
+    "deploy:full": "npm run migrate:deploy && npm run seed"
     "migrate:deploy": "prisma migrate deploy"
   },
   "prisma": {
