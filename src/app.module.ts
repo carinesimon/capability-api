@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { LeadsModule } from './leads/leads.module';
+import { LeadsModule } from '../src/modules/leads/leads.module'; 
 import { AdminModule } from './admin/admin.module';
 import { PrismaModule } from './prisma/prisma.module';   // ✅ Injection Prisma
 
@@ -18,6 +18,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
 import { ProspectsModule } from './prospects/prospects.module';
 import { GhlModule } from './integrations/ghl/ghl.module';
 import { IntegrationsModule } from './integrations/integrations.module';
+import { MetricsModule } from './modules/metrics/metrics.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { IntegrationsModule } from './integrations/integrations.module';
     AuthModule,
     UsersModule,
     LeadsModule,
+    MetricsModule,
     AdminModule,
     AppointmentsModule,
     AttributionModule,
