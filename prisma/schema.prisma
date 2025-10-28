@@ -1,8 +1,7 @@
 // --- DATABASE CONFIG ---
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")         // pooled (runtime)
-  directUrl = env("DIRECT_DATABASE_URL")  // direct (migrations)
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 generator client {
@@ -92,6 +91,9 @@ model Lead {
   callAttempts CallAttempt[]
   leadEvents   LeadEvent[]      @relation("LeadToLeadEvent")
   boardEvents  LeadBoardEvent[] @relation("LeadToLeadBoardEvent")
+
+  // ✅ Comptage par “entrée de stage” (NOUVEAU)
+  stageEvents  StageEvent[]     @relation("LeadToStageEvent")
 
   // Indexes existants/ajoutés
   @@index([stage, stageUpdatedAt])
@@ -499,4 +501,27 @@ model LeadEvent {
 
   @@index([type, occurredAt])
   @@index([leadId, occurredAt])
+}
+
+/**
+ * ===================== StageEvent (NOUVEAU) =====================
+ * Enregistre chaque ENTRÉE dans un stage “canonique” (LeadStage).
+ * Sert de source unique pour les stats du funnel (COUNT par toStage).
+ */
+model StageEvent {
+  id         String     @id @default(cuid())
+  leadId     String
+  fromStage  LeadStage?
+  toStage    LeadStage
+  occurredAt DateTime   @default(now())
+  source     String?    // "ui", "webhook:ghl", "import", etc.
+  externalId String?    @unique // pour idempotence si fourni par un webhook
+  dedupHash  String?    @unique // fallback idempotence (ex: leadId|toStage|minute)
+
+  // 👇 relation nommée qui matche Lead.stageEvents
+  lead Lead @relation(name: "LeadToStageEvent", fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([toStage, occurredAt])
+  @@index([leadId, toStage, occurredAt])
+  @@unique([leadId, toStage]) // 1er passage seulement
 }
