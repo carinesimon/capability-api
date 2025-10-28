@@ -1,13 +1,15 @@
-import { LeadsService } from './leads.service';
-export declare class LeadsController {
-    private readonly leadsService;
-    constructor(leadsService: LeadsService);
-    create(body: {
+import { PrismaService } from '../prisma/prisma.service';
+import { AttributionService } from '../attribution/attribution.service';
+export declare class LeadsService {
+    private prisma;
+    private attribution;
+    constructor(prisma: PrismaService, attribution: AttributionService);
+    create(data: {
         firstName: string;
         lastName?: string;
-        email: string;
+        email?: string;
         tag?: string;
-        assignedTo?: string;
+        setterId?: string;
     }): Promise<{
         id: string;
         email: string | null;
@@ -28,7 +30,10 @@ export declare class LeadsController {
         setterId: string | null;
         closerId: string | null;
     } | null>;
-    findAll(from?: string, to?: string): import("@prisma/client").Prisma.PrismaPromise<({
+    findAll(params?: {
+        from?: Date;
+        to?: Date;
+    }): import("@prisma/client").Prisma.PrismaPromise<({
         appointments: {
             id: string;
             createdAt: Date;
