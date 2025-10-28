@@ -1,11 +1,12 @@
 // prospects.controller.ts
 import {
   Body, Controller, Get, Param, Patch, Post, Put, Query,
-  BadRequestException, NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { ProspectsService } from './prospects.service';
 import { LeadStage, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { CreateProspectEventDto } from './dto/create-prospect-event.dto';
 
 @Controller('prospects')
 export class ProspectsController {
@@ -53,12 +54,13 @@ export class ProspectsController {
     return { setters, closers };
   }
 
-  /* ===== Event (drag&drop) — UNE SEULE FOIS ===== */
+  /* ===== Event (drag&drop) — ENTRÉE DE STAGE + LOG ===== */
   @Post(':id/events')
   async addEvent(
     @Param('id') id: string,
-    @Body() body: { type: string; source?: string; occurredAt?: string; meta?: any },
+    @Body() body: CreateProspectEventDto,
   ) {
+    if (!body?.type) throw new BadRequestException('type requis');
     return this.svc.addEvent(id, body);
   }
 
