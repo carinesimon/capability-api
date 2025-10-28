@@ -105,13 +105,13 @@ type DuoRow = {
   closerName: string;
   closerEmail: string;
 
-  salesCount: number;        // nombre de WON (ventes)
-  revenue: number;           // CA total
-  avgDeal: number;           // panier moyen
+  salesCount: number;
+  revenue: number;
+  avgDeal: number;
 
-  rv1Planned: number;        // sur ces leads (de ce duo)
-  rv1Honored: number;        // idem
-  rv1HonorRate: number | null; // %
+  rv1Planned: number;
+  rv1Honored: number;
+  rv1HonorRate: number | null;
 };
 
 type LeadsReceivedOut = {
@@ -273,260 +273,276 @@ export class ReportingService {
     return out;
   }
 
-/* ---------------- Setters (TTFC basé LeadEvent + ventes issues de ses leads) ---------------- */
-async settersReport(from?: string, to?: string): Promise<SetterRow[]> {
-  const r = toRange(from, to);
-  const spend = await this.sumSpend(r);
+  /* ---------------- Setters (TTFC + RV0 via StageEvent + RV1 via LeadEvent) ---------------- */
+  async settersReport(from?: string, to?: string): Promise<SetterRow[]> {
+    const r = toRange(from, to);
+    const spend = await this.sumSpend(r);
 
-  // Setters actifs
-  const setters = await this.prisma.user.findMany({
-    where: { role: Role.SETTER, isActive: true },
-    select: { id: true, firstName: true, email: true, role: true },
-    orderBy: { firstName: 'asc' },
-  });
-  const setterIds = new Set(setters.map(s => s.id));
+    // Setters actifs
+    const setters = await this.prisma.user.findMany({
+      where: { role: Role.SETTER, isActive: true },
+      select: { id: true, firstName: true, email: true, role: true },
+      orderBy: { firstName: 'asc' },
+    });
+    const setterIds = new Set(setters.map(s => s.id));
 
-  // Leads créés dans la période (pour leadsReceived + répartition budget)
-  const allLeads = await this.prisma.lead.findMany({
-    where: between('createdAt', r),
-    select: { id: true, setterId: true, createdAt: true },
-  });
-  const totalLeads = allLeads.length;
+    // Leads créés dans la période (pour leadsReceived + répartition budget)
+    const allLeads = await this.prisma.lead.findMany({
+      where: between('createdAt', r),
+      select: { id: true, setterId: true, createdAt: true },
+    });
+    const totalLeads = allLeads.length;
 
-  /* ===================== TTFC : CALL_REQUESTED -> CALL_ATTEMPT ===================== */
-
-  // 1) première demande d’appel par lead dans [from;to]
-  const reqEvents = await this.prisma.leadEvent.findMany({
-    where: { type: 'CALL_REQUESTED', ...between('occurredAt', r) },
-    orderBy: { occurredAt: 'asc' },
-    select: { leadId: true, occurredAt: true },
-  });
-  const firstReqByLead = new Map<string, Date>();
-  for (const ev of reqEvents) {
-    if (ev.leadId && !firstReqByLead.has(ev.leadId)) firstReqByLead.set(ev.leadId, ev.occurredAt as any);
-  }
-  const leadsWithRequest = Array.from(firstReqByLead.keys());
-
-  // 2) première entrée en CALL_ATTEMPT après la demande
-  const attemptEvents = leadsWithRequest.length
-    ? await this.prisma.leadEvent.findMany({
-        where: { type: 'CALL_ATTEMPT', leadId: { in: leadsWithRequest } },
-        orderBy: { occurredAt: 'asc' },
-        select: { leadId: true, occurredAt: true },
-      })
-    : [];
-  const firstAttemptEventByLead = new Map<string, Date>();
-  for (const ev of attemptEvents) {
-    if (!ev.leadId) continue;
-    const reqAt = firstReqByLead.get(ev.leadId);
-    if (!reqAt) continue;
-    if (ev.occurredAt < reqAt) continue;
-    if (r.to && ev.occurredAt > r.to) continue;
-    if (!firstAttemptEventByLead.has(ev.leadId)) firstAttemptEventByLead.set(ev.leadId, ev.occurredAt as any);
-  }
-
-  // 3) attribution TTFC au setter qui a passé le premier CallAttempt (fallback lead.setterId)
-  type TtfcAgg = { sum: number; n: number };
-  const ttfcBySetter: Record<string, TtfcAgg> = {};
-  const isSetter = (userId: string) => setterIds.has(userId);
-
-  for (const leadId of leadsWithRequest) {
-    const requestAt = firstReqByLead.get(leadId);
-    const attemptEventAt = firstAttemptEventByLead.get(leadId);
-    if (!requestAt || !attemptEventAt) continue;
-
-    const endWindow = new Date(attemptEventAt.getTime() + 5 * 60 * 1000); // +5 min buffer
-    const ca = await this.prisma.callAttempt.findFirst({
-      where: { leadId, startedAt: { gte: requestAt, lte: endWindow } },
-      orderBy: { startedAt: 'asc' },
-      select: { userId: true, startedAt: true },
+    /* ===== RV0 planifiés par setter (via leadEvent → type = 'RV0_PLANNED') ===== */
+    const rv0PlannedEvents = await (this.prisma as any).leadEvent.findMany({
+      where: { type: 'RV0_PLANNED', ...between('occurredAt', r) },
+      select: { leadId: true },
     });
 
-    let ownerSetterId: string | null = null;
-    if (ca?.userId && isSetter(ca.userId)) ownerSetterId = ca.userId;
-    if (!ownerSetterId) {
-      const l = await this.prisma.lead.findUnique({ where: { id: leadId }, select: { setterId: true } });
-      if (l?.setterId && isSetter(l.setterId)) ownerSetterId = l.setterId;
-    }
-    if (!ownerSetterId) continue;
-
-    const diffMin = Math.round((attemptEventAt.getTime() - requestAt.getTime()) / 60000);
-    if (diffMin < 0) continue;
-
-    const a = ttfcBySetter[ownerSetterId] || { sum: 0, n: 0 };
-    a.sum += diffMin; a.n += 1;
-    ttfcBySetter[ownerSetterId] = a;
-  }
-
-  /* ===================== Lignes ===================== */
-
-  const rows: SetterRow[] = [];
-  for (const s of setters) {
-    const leads = allLeads.filter(l => l.setterId === s.id);
-    const leadIds = leads.map(l => l.id);
-    const leadsReceived = leadIds.length;
-
-    const rv0Count = await this.prisma.appointment.count({
-      where: { userId: s.id, type: AppointmentType.RV0, ...between('scheduledAt', r) },
-    });
-
-    const rv1FromHisLeads = leadIds.length
-      ? await this.prisma.appointment.count({
-          where: { type: AppointmentType.RV1, leadId: { in: leadIds }, ...between('scheduledAt', r) },
+    // map leadId -> setterId (attribution “courante” au moment du reporting)
+    const rv0LeadIds = rv0PlannedEvents.map((e: any) => e.leadId).filter(Boolean);
+    const rv0Leads = rv0LeadIds.length
+      ? await this.prisma.lead.findMany({
+          where: { id: { in: rv0LeadIds } },
+          select: { id: true, setterId: true },
         })
-      : 0;
+      : [];
+    const setterByLead = new Map(rv0Leads.map(l => [l.id, l.setterId || 'UNASSIGNED']));
+    const rv0PlannedBySetter = new Map<string, number>();
+    for (const e of rv0PlannedEvents) {
+      const sid = setterByLead.get(e.leadId) || 'UNASSIGNED';
+      rv0PlannedBySetter.set(sid, (rv0PlannedBySetter.get(sid) || 0) + 1);
+    }
 
-    const ttfcAgg = ttfcBySetter[s.id];
-    const ttfcAvgMinutes = ttfcAgg?.n ? Math.round(ttfcAgg.sum / ttfcAgg.n) : null;
+    /* ===== RV1 HONORED par setter (via leadEvent → type = 'RV1_HONORED') ===== */
+    const rv1HonoredBySetter = new Map<string, number>();
+    {
+      const evs = await (this.prisma as any).leadEvent.findMany({
+        where: { type: 'RV1_HONORED', ...between('occurredAt', r) },
+        select: { lead: { select: { setterId: true } } },
+      });
+      for (const ev of evs) {
+        const sid = ev.lead?.setterId || 'UNASSIGNED';
+        rv1HonoredBySetter.set(sid, (rv1HonoredBySetter.get(sid) || 0) + 1);
+      }
+    }
 
-    // VENTES (WON) issues de ses leads -> on récupère à la fois le CA et le NOMBRE
-    const wonWhere: any = await this.wonFilter(r);
-    wonWhere.setterId = s.id;
-    const wonAgg = await this.prisma.lead.aggregate({
+    /* ===================== TTFC : CALL_REQUESTED -> CALL_ATTEMPT ===================== */
+    // 1) première demande d’appel par lead dans [from;to]
+    const reqEvents = await (this.prisma as any).leadEvent.findMany({
+      where: { type: 'CALL_REQUESTED', ...between('occurredAt', r) },
+      orderBy: { occurredAt: 'asc' },
+      select: { leadId: true, occurredAt: true },
+    });
+    const firstReqByLead = new Map<string, Date>();
+    for (const ev of reqEvents) {
+      if (ev.leadId && !firstReqByLead.has(ev.leadId)) firstReqByLead.set(ev.leadId, ev.occurredAt as any);
+    }
+    const leadsWithRequest = Array.from(firstReqByLead.keys());
+
+    // 2) première entrée en CALL_ATTEMPT après la demande
+    const attemptEvents = leadsWithRequest.length
+      ? await (this.prisma as any).leadEvent.findMany({
+          where: { type: 'CALL_ATTEMPT', leadId: { in: leadsWithRequest } },
+          orderBy: { occurredAt: 'asc' },
+          select: { leadId: true, occurredAt: true },
+        })
+      : [];
+    const firstAttemptEventByLead = new Map<string, Date>();
+    for (const ev of attemptEvents) {
+      if (!ev.leadId) continue;
+      const reqAt = firstReqByLead.get(ev.leadId);
+      if (!reqAt) continue;
+      if (ev.occurredAt < reqAt) continue;
+      if (r.to && ev.occurredAt > r.to) continue;
+      if (!firstAttemptEventByLead.has(ev.leadId)) firstAttemptEventByLead.set(ev.leadId, ev.occurredAt as any);
+    }
+
+    // 3) attribution TTFC au setter qui a passé le premier CallAttempt (fallback lead.setterId)
+    type TtfcAgg = { sum: number; n: number };
+    const ttfcBySetter: Record<string, TtfcAgg> = {};
+    const isSetter = (userId: string) => setterIds.has(userId);
+
+    for (const leadId of leadsWithRequest) {
+      const requestAt = firstReqByLead.get(leadId);
+      const attemptEventAt = firstAttemptEventByLead.get(leadId);
+      if (!requestAt || !attemptEventAt) continue;
+
+      const endWindow = new Date(attemptEventAt.getTime() + 5 * 60 * 1000); // +5 min buffer
+      const ca = await this.prisma.callAttempt.findFirst({
+        where: { leadId, startedAt: { gte: requestAt, lte: endWindow } },
+        orderBy: { startedAt: 'asc' },
+        select: { userId: true, startedAt: true },
+      });
+
+      let ownerSetterId: string | null = null;
+      if (ca?.userId && isSetter(ca.userId)) ownerSetterId = ca.userId;
+      if (!ownerSetterId) {
+        const l = await this.prisma.lead.findUnique({ where: { id: leadId }, select: { setterId: true } });
+        if (l?.setterId && isSetter(l.setterId)) ownerSetterId = l.setterId;
+      }
+      if (!ownerSetterId) continue;
+
+      const diffMin = Math.round((attemptEventAt.getTime() - requestAt.getTime()) / 60000);
+      if (diffMin < 0) continue;
+
+      const a = ttfcBySetter[ownerSetterId] || { sum: 0, n: 0 };
+      a.sum += diffMin; a.n += 1;
+      ttfcBySetter[ownerSetterId] = a;
+    }
+
+    /* ===================== Lignes ===================== */
+    const rows: SetterRow[] = [];
+    for (const s of setters) {
+      const leads = allLeads.filter(l => l.setterId === s.id);
+      const leadIds = leads.map(l => l.id);
+      const leadsReceived = leadIds.length;
+
+      // 🔁 rv0Count basé sur StageEvent agrégé
+      const rv0Count = rv0PlannedBySetter.get(s.id) || 0;
+
+      // 🔁 RV1 HONORED issus de ses leads (via leadEvent)
+      const rv1FromHisLeads = rv1HonoredBySetter.get(s.id) || 0;
+
+      const ttfcAgg = ttfcBySetter[s.id];
+      const ttfcAvgMinutes = ttfcAgg?.n ? Math.round(ttfcAgg.sum / ttfcAgg.n) : null;
+
+      // VENTES (WON) issues de ses leads -> CA & NOMBRE
+      const wonWhere: any = await this.wonFilter(r);
+      wonWhere.setterId = s.id;
+      const wonAgg = await this.prisma.lead.aggregate({
+        _sum: { saleValue: true },
+        _count: { _all: true },
+        where: wonWhere,
+      });
+      const revenueFromHisLeads = num(wonAgg._sum?.saleValue ?? 0);
+      const salesFromHisLeads = num(wonAgg._count?._all ?? 0);
+
+      const spendShare =
+        totalLeads && leadsReceived ? spend * (leadsReceived / totalLeads)
+        : leadsReceived ? spend : 0;
+
+      const cpl = leadsReceived ? Number((spendShare / leadsReceived).toFixed(2)) : null;
+      const cpRv0 = rv0Count ? Number((spendShare / rv0Count).toFixed(2)) : null;
+      const cpRv1 = rv1FromHisLeads ? Number((spendShare / rv1FromHisLeads).toFixed(2)) : null;
+      const roas = spendShare
+        ? Number((revenueFromHisLeads / spendShare).toFixed(2))
+        : revenueFromHisLeads ? Infinity : null;
+
+      rows.push({
+        userId: s.id,
+        name: s.firstName,
+        email: s.email,
+        leadsReceived: num(leadsReceived),
+        rv0Count: num(rv0Count),
+        rv1FromHisLeads: num(rv1FromHisLeads),
+        ttfcAvgMinutes,
+        revenueFromHisLeads,
+        spendShare: Number(spendShare.toFixed(2)),
+        cpl, cpRv0, cpRv1, roas,
+        // ts-expect-error champ additionnel consommé côté front
+        salesFromHisLeads,
+      } as any);
+    }
+
+    return rows;
+  }
+
+  /* ---------------- Duos Setter × Closer (TOP) ---------------- */
+  async duosReport(from?: string, to?: string, top = 10): Promise<DuoRow[]> {
+    const r = toRange(from, to);
+
+    // Seulement les ventes (WON) sur la période
+    const baseWon = await this.wonFilter(r);
+    const whereWon: any = {
+      ...baseWon,
+      setterId: { not: null },
+      closerId: { not: null },
+    };
+
+    // 1) groupBy Lead (WON) par (setterId, closerId)
+    const groups = await this.prisma.lead.groupBy({
+      by: ['setterId', 'closerId'],
+      where: whereWon,
       _sum: { saleValue: true },
       _count: { _all: true },
-      where: wonWhere,
+      orderBy: { _sum: { saleValue: 'desc' } },
     });
-    const revenueFromHisLeads = num(wonAgg._sum?.saleValue ?? 0);
-    const salesFromHisLeads = num(wonAgg._count?._all ?? 0); // <<<<<< NOUVEAU
 
-    const spendShare =
-      totalLeads && leadsReceived ? spend * (leadsReceived / totalLeads)
-      : leadsReceived ? spend : 0;
+    if (!groups.length) return [];
 
-    const cpl = leadsReceived ? Number((spendShare / leadsReceived).toFixed(2)) : null;
-    const cpRv0 = rv0Count ? Number((spendShare / rv0Count).toFixed(2)) : null;
-    const cpRv1 = rv1FromHisLeads ? Number((spendShare / rv1FromHisLeads).toFixed(2)) : null;
-    const roas = spendShare
-      ? Number((revenueFromHisLeads / spendShare).toFixed(2))
-      : revenueFromHisLeads ? Infinity : null;
-
-    rows.push({
-      userId: s.id,
-      name: s.firstName,
-      email: s.email,
-      leadsReceived: num(leadsReceived),
-      rv0Count: num(rv0Count),
-      rv1FromHisLeads: num(rv1FromHisLeads),
-      ttfcAvgMinutes,
-      revenueFromHisLeads,
-      // ----- champs coûts/ROAS
-      spendShare: Number(spendShare.toFixed(2)),
-      cpl, cpRv0, cpRv1, roas,
-      // ----- NOUVEAU :
-      // ts-expect-error: champ ajouté au type côté front
-      salesFromHisLeads,
-    } as any);
-  }
-
-  return rows;
-}
-
-/* ---------------- Duos Setter × Closer (TOP) ---------------- */
-async duosReport(from?: string, to?: string, top = 10): Promise<DuoRow[]> {
-  const r = toRange(from, to);
-
-  // Seulement les ventes (WON) sur la période (stage dynamiques gérés via wonFilter)
-  const baseWon = await this.wonFilter(r);
-  const whereWon: any = {
-    ...baseWon,
-    setterId: { not: null },
-    closerId: { not: null },
-  };
-
-  // 1) groupBy sur Lead (WON) par (setterId, closerId)
-  const groups = await this.prisma.lead.groupBy({
-    by: ['setterId', 'closerId'],
-    where: whereWon,
-    _sum: { saleValue: true },
-    _count: { _all: true },
-    // tri grossier par CA desc (on limitera après enrichissement)
-    orderBy: { _sum: { saleValue: 'desc' } },
-  });
-
-  if (!groups.length) return [];
-
-  // 2) map users
-  const userIds = Array.from(
-    new Set(
-      groups.flatMap(g => [g.setterId!, g.closerId!])
-    )
-  );
-  const users = await this.prisma.user.findMany({
-    where: { id: { in: userIds } },
-    select: { id: true, firstName: true, email: true },
-  });
-  const uById = new Map(users.map(u => [u.id, u]));
-
-  // 3) pour chaque duo, calculer RV1 planifiés / honorés sur les mêmes leads
-  //    (i.e., leads WON sur la période ET attribués à ce duo)
-  const rows: DuoRow[] = [];
-  for (const g of groups) {
-    const setter = uById.get(g.setterId!) || { firstName: '—', email: '—' };
-    const closer = uById.get(g.closerId!) || { firstName: '—', email: '—' };
-
-    // retrouver les ids de ces leads (WON) pour le duo (sert aux RV1)
-    const wonLeads = await this.prisma.lead.findMany({
-      where: {
-        ...whereWon,
-        setterId: g.setterId!,
-        closerId: g.closerId!,
-      },
-      select: { id: true },
+    // 2) map users
+    const userIds = Array.from(new Set(groups.flatMap(g => [g.setterId!, g.closerId!])));
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, firstName: true, email: true },
     });
-    const wonLeadIds = wonLeads.map(l => l.id);
+    const uById = new Map(users.map(u => [u.id, u]));
 
-    let rv1Planned = 0;
-    let rv1Honored = 0;
-    if (wonLeadIds.length) {
-      rv1Planned = await this.prisma.appointment.count({
+    // 3) calc RV1 sur ces mêmes leads WON du duo
+    const rows: DuoRow[] = [];
+    for (const g of groups) {
+      const setter = uById.get(g.setterId!) || { firstName: '—', email: '—' };
+      const closer = uById.get(g.closerId!) || { firstName: '—', email: '—' };
+
+      const wonLeads = await this.prisma.lead.findMany({
         where: {
-          type: AppointmentType.RV1,
-          leadId: { in: wonLeadIds },
-          ...between('scheduledAt', r),
+          ...whereWon,
+          setterId: g.setterId!,
+          closerId: g.closerId!,
         },
+        select: { id: true },
       });
-      rv1Honored = await this.prisma.appointment.count({
-        where: {
-          type: AppointmentType.RV1,
-          status: AppointmentStatus.HONORED,
-          leadId: { in: wonLeadIds },
-          ...between('scheduledAt', r),
-        },
+      const wonLeadIds = wonLeads.map(l => l.id);
+
+      let rv1Planned = 0;
+      let rv1Honored = 0;
+      if (wonLeadIds.length) {
+        rv1Planned = await this.prisma.appointment.count({
+          where: {
+            type: AppointmentType.RV1,
+            leadId: { in: wonLeadIds },
+            ...between('scheduledAt', toRange(from, to)),
+          },
+        });
+        rv1Honored = await this.prisma.appointment.count({
+          where: {
+            type: AppointmentType.RV1,
+            status: AppointmentStatus.HONORED,
+            leadId: { in: wonLeadIds },
+            ...between('scheduledAt', toRange(from, to)),
+          },
+        });
+      }
+
+      const salesCount = g._count._all || 0;
+      const revenue = num(g._sum.saleValue ?? 0);
+      const avgDeal = salesCount ? Math.round(revenue / salesCount) : 0;
+      const rv1HonorRate = rv1Planned ? Number(((rv1Honored / rv1Planned) * 100).toFixed(1)) : null;
+
+      rows.push({
+        setterId: g.setterId!,
+        setterName: setter.firstName,
+        setterEmail: setter.email,
+        closerId: g.closerId!,
+        closerName: closer.firstName,
+        closerEmail: closer.email,
+
+        salesCount,
+        revenue,
+        avgDeal,
+
+        rv1Planned,
+        rv1Honored,
+        rv1HonorRate,
       });
     }
 
-    const salesCount = g._count._all || 0;
-    const revenue = num(g._sum.saleValue ?? 0);
-    const avgDeal = salesCount ? Math.round(revenue / salesCount) : 0;
-    const rv1HonorRate = rv1Planned ? Number(((rv1Honored / rv1Planned) * 100).toFixed(1)) : null;
-
-    rows.push({
-      setterId: g.setterId!,
-      setterName: setter.firstName,
-      setterEmail: setter.email,
-      closerId: g.closerId!,
-      closerName: closer.firstName,
-      closerEmail: closer.email,
-
-      salesCount,
-      revenue,
-      avgDeal,
-
-      rv1Planned,
-      rv1Honored,
-      rv1HonorRate,
-    });
+    rows.sort((a, b) => (b.revenue !== a.revenue ? b.revenue - a.revenue : b.salesCount - a.salesCount));
+    return rows.slice(0, top);
   }
 
-  // tri final par CA puis ventes, et coupe au top N
-  rows.sort((a, b) => {
-    if (b.revenue !== a.revenue) return b.revenue - a.revenue;
-    return b.salesCount - a.salesCount;
-  });
-  return rows.slice(0, top);
-}
-
+  /* ---------------- Closers (RV1 via LeadEvent + RV2 via Appointment) ---------------- */
   async closersReport(from?: string, to?: string): Promise<CloserRow[]> {
     const r = toRange(from, to);
     const closers = await this.prisma.user.findMany({
@@ -536,17 +552,72 @@ async duosReport(from?: string, to?: string, top = 10): Promise<DuoRow[]> {
     });
     const spend = await this.sumSpend(r);
 
+    // ===== RV1 via leadEvent (attribué au closer courant du lead) =====
+    const eventToKey: Array<{ type: string; bucket: 'rv1Planned'|'rv1Honored'|'rv1NoShow' }> = [
+      { type: 'RV1_PLANNED', bucket: 'rv1Planned' },
+      { type: 'RV1_HONORED', bucket: 'rv1Honored' },
+      { type: 'RV1_NO_SHOW', bucket: 'rv1NoShow'  },
+    ];
+
+    const maps = {
+      rv1Planned: new Map<string, number>(),
+      rv1Honored: new Map<string, number>(),
+      rv1NoShow: new Map<string, number>(),
+    };
+
+    // 1) Récupère les events RV1_* sur la période
+    const eventsByType: Record<'rv1Planned'|'rv1Honored'|'rv1NoShow', Array<{ leadId: string }>> = {
+      rv1Planned: [],
+      rv1Honored: [],
+      rv1NoShow: [],
+    };
+
+    for (const { type, bucket } of eventToKey) {
+      const evs = await (this.prisma as any).leadEvent.findMany({
+        where: { type, ...between('occurredAt', r) },
+        select: { leadId: true },
+      });
+      eventsByType[bucket] = evs.filter((e: any) => !!e.leadId);
+    }
+
+    // 2) Construit l’ensemble des leadIds concernés
+    const allLeadIds = Array.from(
+      new Set(
+        ([] as string[]).concat(
+          eventsByType.rv1Planned.map(e => e.leadId),
+          eventsByType.rv1Honored.map(e => e.leadId),
+          eventsByType.rv1NoShow.map(e => e.leadId),
+        )
+      )
+    );
+
+    // 3) Map leadId -> closerId courant
+    const leadCloserMap = new Map<string, string>();
+    if (allLeadIds.length) {
+      const leads = await this.prisma.lead.findMany({
+        where: { id: { in: allLeadIds } },
+        select: { id: true, closerId: true },
+      });
+      for (const l of leads) {
+        leadCloserMap.set(l.id, l.closerId || 'UNASSIGNED');
+      }
+    }
+
+    // 4) Compte par closer pour chaque bucket
+    for (const bucket of ['rv1Planned', 'rv1Honored', 'rv1NoShow'] as const) {
+      for (const e of eventsByType[bucket]) {
+        const cid = leadCloserMap.get(e.leadId) || 'UNASSIGNED';
+        maps[bucket].set(cid, (maps[bucket].get(cid) || 0) + 1);
+      }
+    }
+
     const rows: CloserRow[] = [];
     for (const c of closers) {
-      const rv1Planned = await this.prisma.appointment.count({
-        where: { userId: c.id, type: AppointmentType.RV1, ...between('scheduledAt', r) },
-      });
-      const rv1Honored = await this.prisma.appointment.count({
-        where: { userId: c.id, type: AppointmentType.RV1, status: AppointmentStatus.HONORED, ...between('scheduledAt', r) },
-      });
-      const rv1NoShow = await this.prisma.appointment.count({
-        where: { userId: c.id, type: AppointmentType.RV1, status: AppointmentStatus.NO_SHOW, ...between('scheduledAt', r) },
-      });
+      const rv1Planned = maps.rv1Planned.get(c.id) || 0;
+      const rv1Honored = maps.rv1Honored.get(c.id) || 0;
+      const rv1NoShow  = maps.rv1NoShow.get(c.id)  || 0;
+
+      // RV2 (laisse via appointment)
       const rv2Planned = await this.prisma.appointment.count({
         where: { userId: c.id, type: AppointmentType.RV2, ...between('scheduledAt', r) },
       });
@@ -554,6 +625,7 @@ async duosReport(from?: string, to?: string, top = 10): Promise<DuoRow[]> {
         where: { userId: c.id, type: AppointmentType.RV2, status: AppointmentStatus.HONORED, ...between('scheduledAt', r) },
       });
 
+      // Ventes attribuées à ce closer
       const wonWhere: any = await this.wonFilter(r);
       wonWhere.closerId = c.id;
       const wonAgg = await this.prisma.lead.aggregate({
@@ -581,6 +653,29 @@ async duosReport(from?: string, to?: string, top = 10): Promise<DuoRow[]> {
         roasHonored,
       });
     }
+
+    // Optionnel : ligne "Non assigné"
+    if (
+      maps.rv1Planned.has('UNASSIGNED') ||
+      maps.rv1Honored.has('UNASSIGNED') ||
+      maps.rv1NoShow.has('UNASSIGNED')
+    ) {
+      rows.push({
+        userId: 'UNASSIGNED',
+        name: 'Non assigné',
+        email: '',
+        rv1Planned: num(maps.rv1Planned.get('UNASSIGNED') || 0),
+        rv1Honored: num(maps.rv1Honored.get('UNASSIGNED') || 0),
+        rv1NoShow: num(maps.rv1NoShow.get('UNASSIGNED') || 0),
+        rv2Planned: 0,
+        rv2Honored: 0,
+        salesClosed: 0,
+        revenueTotal: 0,
+        roasPlanned: null,
+        roasHonored: null,
+      });
+    }
+
     return rows;
   }
 
@@ -779,7 +874,7 @@ async duosReport(from?: string, to?: string, top = 10): Promise<DuoRow[]> {
     return out;
   }
 
-    /* =================== METRICS JOURNALIÈRES BASÉES SUR LES STAGES =================== */
+  /* =================== METRICS JOURNALIÈRES BASÉES SUR LES STAGES =================== */
 
   /** Compte par jour le nombre de leads qui sont ENTRÉS dans l’un des stages `keys` (via stageUpdatedAt). */
   private async perDayFromStages(
@@ -788,10 +883,8 @@ async duosReport(from?: string, to?: string, top = 10): Promise<DuoRow[]> {
     to?: string,
   ): Promise<{ total: number; byDay?: Array<{ day: string; count: number }> }> {
     const r = toRange(from, to);
-    // Récupère les ids de Stage dynamiques pour ces slugs
     const ids = await this.stageIdsForKeys(keys);
 
-    // Si pas de bornes -> total simple (byDay vide)
     if (!r.from || !r.to) {
       const where: any = {
         AND: [
@@ -840,7 +933,6 @@ async duosReport(from?: string, to?: string, top = 10): Promise<DuoRow[]> {
   async metricCallsAnswered(from?: string, to?: string) {
     return this.perDayFromStages(['CALL_ANSWERED'], from, to);
   }
-
 
   /* ---------------- DRILLS (sources inchangées) ---------------- */
 
