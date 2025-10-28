@@ -1,8 +1,12 @@
-import { AttributionService } from './attribution.service';
-export declare class AttributionController {
-    private readonly service;
-    constructor(service: AttributionService);
-    ensure(leadId: string): Promise<({
+import { PrismaService } from '../prisma/prisma.service';
+export declare class AttributionService {
+    private prisma;
+    constructor(prisma: PrismaService);
+    pickNextSetter(now?: Date): Promise<{
+        id: string;
+        firstName: string;
+    } | null>;
+    ensureSetter(leadId: string, when?: Date): Promise<({
         setter: {
             id: string;
             email: string;
