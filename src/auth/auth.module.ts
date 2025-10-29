@@ -7,15 +7,26 @@ import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { PrismaModule } from '../prisma/prisma.module';
 
-// Accepté par jsonwebtoken: "2h", "30m", "7d" ou un nombre de secondes (ex: "3600")
-function parseJwtExpires(input?: string): string | number {
-  const v = (input ?? '').trim();
-  if (!v) return '2h';
-  return /^\d+$/.test(v) ? Number(v) : v;
+// Durée acceptée par jsonwebtoken (typée comme ms.StringValue côté @nestjs/jwt)
+type MsUnit = 'ms' | 's' | 'm' | 'h' | 'd';
+type MsString = `${number}${MsUnit}`;
+
+/** Parse JWT_EXPIRES: nombre de secondes ("3600") ou durée style "2h","30m","7d". */
+function getExpires(): number | MsString {
+  const raw = (process.env.JWT_EXPIRES ?? '').trim();
+  if (!raw) return '2h';
+  if (/^\d+$/.test(raw)) return Number(raw);
+  // Valide un pattern minimal compatible avec ms
+  if (/^\d+\s*(ms|s|m|h|d)$/i.test(raw)) {
+    const [num, unit] = raw.replace(/\s+/g, '').match(/^(\d+)(ms|s|m|h|d)$/i)!.slice(1) as [string, MsUnit];
+    return `${Number(num)}${unit}` as MsString;
+  }
+  // fallback sûr
+  return '2h';
 }
 
 const jwtSecret: string = process.env.JWT_SECRET || 'dev-secret';
-const jwtExpires: string | number = parseJwtExpires(process.env.JWT_EXPIRES);
+const jwtExpires: number | MsString = getExpires();
 
 @Module({
   imports: [
@@ -24,7 +35,7 @@ const jwtExpires: string | number = parseJwtExpires(process.env.JWT_EXPIRES);
     JwtModule.register({
       secret: jwtSecret,
       signOptions: {
-        // jsonwebtoken accepte string | number — on reste strictement typé
+        // Typage strict: number | MsString correspond à number | StringValue
         expiresIn: jwtExpires,
       },
     }),
