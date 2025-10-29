@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { LeadsModule } from '../src/modules/leads/leads.module'; 
+import { LeadsModule } from './modules/leads/leads.module';
 import { AdminModule } from './admin/admin.module';
 import { PrismaModule } from './prisma/prisma.module';   // ✅ Injection Prisma
 
