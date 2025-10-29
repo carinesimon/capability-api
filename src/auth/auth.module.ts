@@ -4,28 +4,29 @@ import { PassportModule } from '@nestjs/passport';
 
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
-import { JwtStrategy } from './jwt.strategy'; // garde ton chemin existant
+import { JwtStrategy } from './jwt.strategy';
 import { PrismaModule } from '../prisma/prisma.module';
 
-// Coercion: "3600" -> 3600 (seconds), "1h"/"30m"/"7d" -> string accepté par jsonwebtoken
-function coerceJwtExpires(value?: string): number | (string & {}) {
-  const v = (value ?? '').trim();
-  if (!v) return '2h' as string & {};
-  if (/^\d+$/.test(v)) return Number(v);
-  return v as string & {};
+// Accepté par jsonwebtoken: "2h", "30m", "7d" ou un nombre de secondes (ex: "3600")
+function parseJwtExpires(input?: string): string | number {
+  const v = (input ?? '').trim();
+  if (!v) return '2h';
+  return /^\d+$/.test(v) ? Number(v) : v;
 }
 
-const jwtSecret = process.env.JWT_SECRET || 'dev-secret';
-const jwtExpires = coerceJwtExpires(process.env.JWT_EXPIRES || '2h');
+const jwtSecret: string = process.env.JWT_SECRET || 'dev-secret';
+const jwtExpires: string | number = parseJwtExpires(process.env.JWT_EXPIRES);
 
 @Module({
   imports: [
     PrismaModule,
-    // optionnel mais pratique pour préciser la stratégie par défaut
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.register({
       secret: jwtSecret,
-      signOptions: { expiresIn: jwtExpires },
+      signOptions: {
+        // jsonwebtoken accepte string | number — on reste strictement typé
+        expiresIn: jwtExpires,
+      },
     }),
   ],
   controllers: [AuthController],
