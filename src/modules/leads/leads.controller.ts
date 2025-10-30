@@ -21,4 +21,5 @@ export class LeadsController {
   ) {
     return this.leads.moveToBoardColumn(id, body.columnKey);
   }
+  
 }
