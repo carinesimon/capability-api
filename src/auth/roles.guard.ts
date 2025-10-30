@@ -12,4 +12,6 @@ export class RolesGuard implements CanActivate {
     const user = req.user; // injecté par JwtAuthGuard
     return !!user && roles.includes(user.role);
   }
+  
 }
+
