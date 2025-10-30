@@ -26,4 +26,6 @@ export class MetricsService {
     // On retourne un record { [stage: string]: number }
     return Object.fromEntries(rows.map((r) => [r.type as string, r._count._all]));
   }
+  
 }
+
