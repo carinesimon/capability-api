@@ -28,5 +28,7 @@ export class AuthController {
     @Body() body: { email: string; password: string; role: Role; firstName?: string; lastName?: string },
   ) {
     return this.auth.adminCreateUser(req.user.sub, body);
+    
   }
 }
+
