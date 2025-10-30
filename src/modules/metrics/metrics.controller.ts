@@ -12,4 +12,5 @@ export class MetricsController {
     const totals = await this.metrics.funnelTotals({ start: s, end: e });
     return { totals };
   }
+  
 }
