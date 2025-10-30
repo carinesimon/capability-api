@@ -63,4 +63,5 @@ export class LeadsService {
     await this.prisma.lead.delete({ where: { id: leadId } });
     return { ok: true };
   }
+  
 }
