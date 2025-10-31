@@ -1,51 +1,76 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Query, Header } from '@nestjs/common';
 import { ReportingService } from './reporting.service';
 
 @Controller('reporting')
 export class ReportingController {
   constructor(private readonly reporting: ReportingService) {}
 
+  // Utilitaires anti-cache pour toutes les routes data
+  private static readonly NO_CACHE = {
+    cache: 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    pragma: 'no-cache',
+    expires: '0',
+  };
+
   // ===== KPIs déjà utilisés par le front =====
   @Get('summary')
+  @Header('Cache-Control', ReportingController.NO_CACHE.cache)
+  @Header('Pragma', ReportingController.NO_CACHE.pragma)
+  @Header('Expires', ReportingController.NO_CACHE.expires)
   summary(@Query('from') from?: string, @Query('to') to?: string) {
     return this.reporting.summary(from, to);
   }
 
   @Get('leads-received')
+  @Header('Cache-Control', ReportingController.NO_CACHE.cache)
+  @Header('Pragma', ReportingController.NO_CACHE.pragma)
+  @Header('Expires', ReportingController.NO_CACHE.expires)
   leadsReceived(@Query('from') from?: string, @Query('to') to?: string) {
     return this.reporting.leadsReceived(from, to);
   }
 
   @Get('sales-weekly')
+  @Header('Cache-Control', ReportingController.NO_CACHE.cache)
+  @Header('Pragma', ReportingController.NO_CACHE.pragma)
+  @Header('Expires', ReportingController.NO_CACHE.expires)
   salesWeekly(@Query('from') from?: string, @Query('to') to?: string) {
     return this.reporting.salesWeekly(from, to);
   }
 
   @Get('setters')
+  @Header('Cache-Control', ReportingController.NO_CACHE.cache)
+  @Header('Pragma', ReportingController.NO_CACHE.pragma)
+  @Header('Expires', ReportingController.NO_CACHE.expires)
   setters(@Query('from') from?: string, @Query('to') to?: string) {
     return this.reporting.settersReport(from, to);
   }
 
   @Get('closers')
+  @Header('Cache-Control', ReportingController.NO_CACHE.cache)
+  @Header('Pragma', ReportingController.NO_CACHE.pragma)
+  @Header('Expires', ReportingController.NO_CACHE.expires)
   closers(@Query('from') from?: string, @Query('to') to?: string) {
     return this.reporting.closersReport(from, to);
   }
 
-@Get('duos')
-async duos(
-  @Query('from') from?: string,
-  @Query('to') to?: string,
-  @Query('top') top?: string,
-) {
-  const n = Math.max(1, Math.min(50, Number(top) || 10));
-  return this.reporting.duosReport(from, to, n);
-}
+  @Get('duos')
+  @Header('Cache-Control', ReportingController.NO_CACHE.cache)
+  @Header('Pragma', ReportingController.NO_CACHE.pragma)
+  @Header('Expires', ReportingController.NO_CACHE.expires)
+  async duos(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('top') top?: string,
+  ) {
+    const n = Math.max(1, Math.min(50, Number(top) || 10));
+    return this.reporting.duosReport(from, to, n);
+  }
 
-
-  // ====== NOUVEAU : métriques pipeline basées uniquement sur les STAGES ======
-  // mode = 'entered' (défaut) → compte les leads qui ONT BASCULÉ dans le stage pendant [from;to] (via stageUpdatedAt)
-  // mode = 'current' → compte les leads ACTUELLEMENT dans le stage (quel que soit stageUpdatedAt), proxy utile pour tes filtres.
+  // ====== Métriques pipeline basées uniquement sur les STAGES ======
   @Get('pipeline-metrics')
+  @Header('Cache-Control', ReportingController.NO_CACHE.cache)
+  @Header('Pragma', ReportingController.NO_CACHE.pragma)
+  @Header('Expires', ReportingController.NO_CACHE.expires)
   pipelineMetrics(
     @Query('keys') keysCsv: string,
     @Query('from') from?: string,
@@ -58,34 +83,52 @@ async duos(
 
   // Semaine par semaine (entered par défaut)
   @Get('weekly-ops')
+  @Header('Cache-Control', ReportingController.NO_CACHE.cache)
+  @Header('Pragma', ReportingController.NO_CACHE.pragma)
+  @Header('Expires', ReportingController.NO_CACHE.expires)
   weeklyOps(@Query('from') from?: string, @Query('to') to?: string) {
     return this.reporting.weeklySeries(from, to).then(rows => ({ ok: true, rows }));
   }
 
-    /* ===== METRICS JOURNALIÈRES ===== */
+  /* ===== METRICS JOURNALIÈRES ===== */
   @Get('metric/call-requests')
+  @Header('Cache-Control', ReportingController.NO_CACHE.cache)
+  @Header('Pragma', ReportingController.NO_CACHE.pragma)
+  @Header('Expires', ReportingController.NO_CACHE.expires)
   metricCallRequests(@Query('from') from?: string, @Query('to') to?: string) {
     return this.reporting.metricCallRequests(from, to);
   }
 
   @Get('metric/calls')
+  @Header('Cache-Control', ReportingController.NO_CACHE.cache)
+  @Header('Pragma', ReportingController.NO_CACHE.pragma)
+  @Header('Expires', ReportingController.NO_CACHE.expires)
   metricCalls(@Query('from') from?: string, @Query('to') to?: string) {
     return this.reporting.metricCalls(from, to);
   }
 
   @Get('metric/calls-answered')
+  @Header('Cache-Control', ReportingController.NO_CACHE.cache)
+  @Header('Pragma', ReportingController.NO_CACHE.pragma)
+  @Header('Expires', ReportingController.NO_CACHE.expires)
   metricCallsAnswered(@Query('from') from?: string, @Query('to') to?: string) {
     return this.reporting.metricCallsAnswered(from, to);
   }
 
-  // ===== Funnel agrégé (utilise les mêmes compteurs stage-based) =====
+  // ===== Funnel agrégé =====
   @Get('funnel')
+  @Header('Cache-Control', ReportingController.NO_CACHE.cache)
+  @Header('Pragma', ReportingController.NO_CACHE.pragma)
+  @Header('Expires', ReportingController.NO_CACHE.expires)
   funnel(@Query('from') from?: string, @Query('to') to?: string) {
     return this.reporting.funnel(from, to);
   }
 
-  // ===== DRILLS (inchangé côté front – toujours OK) =====
+  // ===== DRILLS =====
   @Get('drill/appointments')
+  @Header('Cache-Control', ReportingController.NO_CACHE.cache)
+  @Header('Pragma', ReportingController.NO_CACHE.pragma)
+  @Header('Expires', ReportingController.NO_CACHE.expires)
   drillAppointments(
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -98,6 +141,9 @@ async duos(
   }
 
   @Get('drill/won')
+  @Header('Cache-Control', ReportingController.NO_CACHE.cache)
+  @Header('Pragma', ReportingController.NO_CACHE.pragma)
+  @Header('Expires', ReportingController.NO_CACHE.expires)
   drillWon(
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -107,6 +153,9 @@ async duos(
   }
 
   @Get('drill/leads-received')
+  @Header('Cache-Control', ReportingController.NO_CACHE.cache)
+  @Header('Pragma', ReportingController.NO_CACHE.pragma)
+  @Header('Expires', ReportingController.NO_CACHE.expires)
   drillLeadsReceived(
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -116,6 +165,9 @@ async duos(
   }
 
   @Get('drill/call-requests')
+  @Header('Cache-Control', ReportingController.NO_CACHE.cache)
+  @Header('Pragma', ReportingController.NO_CACHE.pragma)
+  @Header('Expires', ReportingController.NO_CACHE.expires)
   drillCallRequests(
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -125,6 +177,9 @@ async duos(
   }
 
   @Get('drill/calls')
+  @Header('Cache-Control', ReportingController.NO_CACHE.cache)
+  @Header('Pragma', ReportingController.NO_CACHE.pragma)
+  @Header('Expires', ReportingController.NO_CACHE.expires)
   drillCalls(
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -140,4 +195,3 @@ async duos(
     });
   }
 }
-
