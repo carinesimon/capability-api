@@ -2,10 +2,9 @@ import { Module } from '@nestjs/common';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { LeadsModule } from './modules/leads/leads.module';
+import { LeadsModule } from '../src/modules/leads/leads.module'; 
 import { AdminModule } from './admin/admin.module';
 import { PrismaModule } from './prisma/prisma.module';   // ✅ Injection Prisma
-
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { AppointmentsModule } from './appointments/appointments.module';
@@ -19,6 +18,7 @@ import { ProspectsModule } from './prospects/prospects.module';
 import { GhlModule } from './integrations/ghl/ghl.module';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { MetricsModule } from './modules/metrics/metrics.module';
+import { LeadsAliasController } from "./leads/leads-alias.controller";
 
 @Module({
   imports: [
@@ -39,7 +39,7 @@ import { MetricsModule } from './modules/metrics/metrics.module';
     GhlModule,
     IntegrationsModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, LeadsAliasController,],
   providers: [AppService],
 })
 export class AppModule {}
