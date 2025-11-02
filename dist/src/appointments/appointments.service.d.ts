@@ -1,6 +1,7 @@
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { AppointmentType } from '@prisma/client';
+
 export declare class AppointmentsService {
     private prisma;
     constructor(prisma: PrismaService);
