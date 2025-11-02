@@ -12,10 +12,10 @@ export declare class StageEventsService {
         occurredAt?: Date;
     }): Promise<{
         id: string;
-        type: string;
-        meta: import("@prisma/client/runtime/library").JsonValue | null;
-        occurredAt: Date;
         createdAt: Date;
         leadId: string;
+        occurredAt: Date;
+        type: string;
+        meta: import("@prisma/client/runtime/library").JsonValue | null;
     } | null>;
 }

@@ -17,12 +17,20 @@ type FunnelParams = {
 export declare class LeadStageService {
     private prisma;
     constructor(prisma: PrismaService);
+    moveLeadToStage(input: StageMoveInput): Promise<{
+        id: string;
+        createdAt: Date;
+        leadId: string;
+        occurredAt: Date;
+        type: string;
+        meta: import("@prisma/client/runtime/library").JsonValue | null;
+    }>;
     recordStageEntry(input: StageMoveInput): Promise<{
         id: string;
         createdAt: Date;
         leadId: string;
-        type: string;
         occurredAt: Date;
+        type: string;
         meta: import("@prisma/client/runtime/library").JsonValue | null;
     }>;
     getFunnelStats(params: FunnelParams): Promise<Record<LeadStage, number>>;

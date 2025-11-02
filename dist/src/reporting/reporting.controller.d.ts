@@ -75,6 +75,10 @@ export declare class ReportingController {
         rv1HonorRate: number | null;
     }[]>;
     pipelineMetrics(keysCsv: string, from?: string, to?: string, mode?: 'entered' | 'current'): Promise<Record<string, number>>;
+    pipelineStageTotals(from?: string, to?: string): Promise<{
+        ok: boolean;
+        stages: any;
+    }>;
     weeklyOps(from?: string, to?: string): Promise<{
         ok: boolean;
         rows: {

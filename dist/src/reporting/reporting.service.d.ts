@@ -124,24 +124,29 @@ export declare class ReportingService {
     private wonFilter;
     private sumSpend;
     leadsReceived(from?: string, to?: string): Promise<LeadsReceivedOut>;
+    private variantsFor;
+    private historyWhere;
+    private countHistory;
+    private perDayFromHistory;
+    private countHistoryMany;
     salesWeekly(from?: string, to?: string): Promise<SalesWeeklyItem[]>;
     settersReport(from?: string, to?: string): Promise<SetterRow[]>;
     duosReport(from?: string, to?: string, top?: number): Promise<DuoRow[]>;
+    pipelineStageTotals(from?: string, to?: string): Promise<{
+        ok: boolean;
+        stages: any;
+    }>;
     closersReport(from?: string, to?: string): Promise<CloserRow[]>;
     summary(from?: string, to?: string): Promise<SummaryOut>;
-    private stageIdsForKeys;
-    private countEnteredInStages;
-    private countCurrentInStages;
     pipelineMetrics(args: {
         keys: string[];
         from?: string;
         to?: string;
         mode?: 'entered' | 'current';
     }): Promise<Record<string, number>>;
-    private funnelFromStages;
+    private funnelFromHistory;
     funnel(from?: string, to?: string): Promise<FunnelOut>;
     weeklySeries(from?: string, to?: string): Promise<WeeklyOpsRow[]>;
-    private perDayFromStages;
     metricCallRequests(from?: string, to?: string): Promise<{
         total: number;
         byDay?: Array<{

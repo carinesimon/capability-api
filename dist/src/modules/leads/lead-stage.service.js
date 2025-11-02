@@ -52,15 +52,16 @@ let LeadStageService = class LeadStageService {
     constructor(prisma) {
         this.prisma = prisma;
     }
-    async recordStageEntry(input) {
+    async moveLeadToStage(input) {
         const { leadId, toStage } = input;
         const occurredAt = input.occurredAt ?? new Date();
         const lead = await this.prisma.lead.findUnique({
             where: { id: leadId },
             select: { stage: true },
         });
-        if (!lead)
+        if (!lead) {
             throw new common_1.BadRequestException('Lead not found');
+        }
         const fromStage = lead.stage;
         let eventId;
         if (input.externalId) {
@@ -80,24 +81,30 @@ let LeadStageService = class LeadStageService {
             create: {
                 id: eventId,
                 leadId,
-                type: 'STAGE_ENTER',
+                type: toStage,
+                occurredAt,
                 meta: {
                     toStage,
                     fromStage,
                     source: input.source ?? null,
                     actorId: input.actorId ?? null,
                 },
-                occurredAt,
             },
             update: {},
         });
         if (fromStage !== toStage) {
             await this.prisma.lead.update({
                 where: { id: leadId },
-                data: { stage: toStage, stageUpdatedAt: new Date() },
+                data: {
+                    stage: toStage,
+                    stageUpdatedAt: new Date(),
+                },
             });
         }
         return event;
+    }
+    async recordStageEntry(input) {
+        return this.moveLeadToStage(input);
     }
     async getFunnelStats(params) {
         const { start, end, stages, distinctLeads } = params;
@@ -107,33 +114,34 @@ let LeadStageService = class LeadStageService {
             out[s] = 0;
         const events = await this.prisma.leadEvent.findMany({
             where: {
-                type: 'STAGE_ENTER',
+                type: { in: stagesToCount.map((s) => s) },
                 occurredAt: { gte: start, lt: end },
             },
-            select: { leadId: true, meta: true },
+            select: {
+                leadId: true,
+                type: true,
+            },
         });
         if (!distinctLeads) {
             for (const ev of events) {
-                const meta = ev.meta;
-                const toStage = meta?.toStage;
-                if (toStage && stagesToCount.includes(toStage)) {
-                    out[toStage] = (out[toStage] ?? 0) + 1;
+                const stage = ev.type;
+                if (stagesToCount.includes(stage)) {
+                    out[stage] = (out[stage] ?? 0) + 1;
                 }
             }
         }
         else {
-            const perStageSets = new Map();
+            const perStage = new Map();
             for (const s of stagesToCount)
-                perStageSets.set(s, new Set());
+                perStage.set(s, new Set());
             for (const ev of events) {
-                const meta = ev.meta;
-                const toStage = meta?.toStage;
-                if (toStage && stagesToCount.includes(toStage)) {
-                    perStageSets.get(toStage).add(ev.leadId);
+                const stage = ev.type;
+                if (stagesToCount.includes(stage)) {
+                    perStage.get(stage).add(ev.leadId);
                 }
             }
             for (const s of stagesToCount) {
-                out[s] = perStageSets.get(s).size;
+                out[s] = perStage.get(s).size;
             }
         }
         return out;

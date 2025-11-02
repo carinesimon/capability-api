@@ -4,11 +4,6 @@ import { ReportingService } from '../reporting/reporting.service';
 import { StageEventsService } from '../modules/leads/stage-events.service';
 import { CreateProspectEventDto } from './dto/create-prospect-event.dto';
 export type PipelineMetricKey = 'LEADS_RECEIVED' | 'CALL_REQUESTED' | 'CALL_ATTEMPT' | 'CALL_ANSWERED' | 'SETTER_NO_SHOW' | 'FOLLOW_UP' | 'RV0_PLANNED' | 'RV0_HONORED' | 'RV0_NO_SHOW' | 'RV1_PLANNED' | 'RV1_HONORED' | 'RV1_NO_SHOW' | 'RV1_POSTPONED' | 'RV2_PLANNED' | 'RV2_HONORED' | 'RV2_POSTPONED' | 'NOT_QUALIFIED' | 'LOST' | 'WON';
-type OpsColumn = {
-    key: PipelineMetricKey;
-    label: string;
-    count: number;
-};
 type BoardArgs = {
     from?: string;
     to?: string;
@@ -62,20 +57,35 @@ export declare class ProspectsService {
     moveToFreeColumn(leadId: string, columnKey: string): Promise<{
         ok: boolean;
     }>;
-    getOpsColumns(from?: string, to?: string): Promise<{
-        ok: true;
-        columns: OpsColumn[];
-        period: {
-            from?: string;
-            to?: string;
-        };
+    private ensureStageHistory;
+    changeStage(leadId: string, dto: {
+        stage: string;
+    }): Promise<{
+        stage: import("@prisma/client").$Enums.LeadStage;
+        id: string;
+        firstName: string;
+        lastName: string | null;
+        email: string | null;
+        phone: string | null;
+        tag: string | null;
+        source: string | null;
+        stageUpdatedAt: Date;
+        stageId: string | null;
+        boardColumnKey: string | null;
+        opportunityValue: number | null;
+        saleValue: number | null;
+        setterId: string | null;
+        closerId: string | null;
+        ghlContactId: string | null;
+        createdAt: Date;
+        updatedAt: Date;
     }>;
     private DEFAULT_BOARD_COLUMNS;
     getColumnsConfig(): Promise<{
         ok: boolean;
         columns: {
-            id: string;
             stage: import("@prisma/client").$Enums.LeadStage | null;
+            id: string;
             createdAt: Date;
             updatedAt: Date;
             label: string;
@@ -92,8 +102,8 @@ export declare class ProspectsService {
     }>): Promise<{
         ok: boolean;
         columns: {
-            id: string;
             stage: import("@prisma/client").$Enums.LeadStage | null;
+            id: string;
             createdAt: Date;
             updatedAt: Date;
             label: string;
@@ -125,6 +135,7 @@ export declare class ProspectsService {
                     email: string;
                 } | null;
             } & {
+                stage: import("@prisma/client").$Enums.LeadStage;
                 id: string;
                 firstName: string;
                 lastName: string | null;
@@ -132,7 +143,6 @@ export declare class ProspectsService {
                 phone: string | null;
                 tag: string | null;
                 source: string | null;
-                stage: import("@prisma/client").$Enums.LeadStage;
                 stageUpdatedAt: Date;
                 stageId: string | null;
                 boardColumnKey: string | null;
@@ -161,6 +171,7 @@ export declare class ProspectsService {
                 email: string;
             } | null;
         } & {
+            stage: import("@prisma/client").$Enums.LeadStage;
             id: string;
             firstName: string;
             lastName: string | null;
@@ -168,7 +179,6 @@ export declare class ProspectsService {
             phone: string | null;
             tag: string | null;
             source: string | null;
-            stage: import("@prisma/client").$Enums.LeadStage;
             stageUpdatedAt: Date;
             stageId: string | null;
             boardColumnKey: string | null;
@@ -193,6 +203,7 @@ export declare class ProspectsService {
             email: string;
         } | null;
     } & {
+        stage: import("@prisma/client").$Enums.LeadStage;
         id: string;
         firstName: string;
         lastName: string | null;
@@ -200,7 +211,6 @@ export declare class ProspectsService {
         phone: string | null;
         tag: string | null;
         source: string | null;
-        stage: import("@prisma/client").$Enums.LeadStage;
         stageUpdatedAt: Date;
         stageId: string | null;
         boardColumnKey: string | null;
@@ -226,6 +236,7 @@ export declare class ProspectsService {
                 email: string;
             } | null;
         } & {
+            stage: import("@prisma/client").$Enums.LeadStage;
             id: string;
             firstName: string;
             lastName: string | null;
@@ -233,7 +244,6 @@ export declare class ProspectsService {
             phone: string | null;
             tag: string | null;
             source: string | null;
-            stage: import("@prisma/client").$Enums.LeadStage;
             stageUpdatedAt: Date;
             stageId: string | null;
             boardColumnKey: string | null;
@@ -249,6 +259,7 @@ export declare class ProspectsService {
     createLead(body: CreateLeadBody): Promise<{
         ok: boolean;
         lead: {
+            stage: import("@prisma/client").$Enums.LeadStage;
             id: string;
             firstName: string;
             lastName: string | null;
@@ -256,7 +267,6 @@ export declare class ProspectsService {
             phone: string | null;
             tag: string | null;
             source: string | null;
-            stage: import("@prisma/client").$Enums.LeadStage;
             stageUpdatedAt: Date;
             stageId: string | null;
             boardColumnKey: string | null;

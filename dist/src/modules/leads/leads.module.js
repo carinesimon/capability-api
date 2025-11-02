@@ -9,16 +9,21 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.LeadsModule = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_module_1 = require("../../prisma/prisma.module");
-const stage_events_service_1 = require("./stage-events.service");
 const leads_service_1 = require("./leads.service");
+const stage_events_service_1 = require("./stage-events.service");
+const leads_controller_1 = require("./leads.controller");
 let LeadsModule = class LeadsModule {
 };
 exports.LeadsModule = LeadsModule;
 exports.LeadsModule = LeadsModule = __decorate([
     (0, common_1.Module)({
         imports: [prisma_module_1.PrismaModule],
+        controllers: [leads_controller_1.LeadsController],
         providers: [leads_service_1.LeadsService, stage_events_service_1.StageEventsService],
-        exports: [leads_service_1.LeadsService, stage_events_service_1.StageEventsService],
+        exports: [
+            leads_service_1.LeadsService,
+            stage_events_service_1.StageEventsService,
+        ],
     })
 ], LeadsModule);
 //# sourceMappingURL=leads.module.js.map

@@ -27,6 +27,7 @@ export declare class ProspectsController {
                     email: string;
                 } | null;
             } & {
+                stage: import("@prisma/client").$Enums.LeadStage;
                 id: string;
                 firstName: string;
                 lastName: string | null;
@@ -34,7 +35,6 @@ export declare class ProspectsController {
                 phone: string | null;
                 tag: string | null;
                 source: string | null;
-                stage: import("@prisma/client").$Enums.LeadStage;
                 stageUpdatedAt: Date;
                 stageId: string | null;
                 boardColumnKey: string | null;
@@ -51,8 +51,8 @@ export declare class ProspectsController {
     getColumnsConfig(): Promise<{
         ok: boolean;
         columns: {
-            id: string;
             stage: import("@prisma/client").$Enums.LeadStage | null;
+            id: string;
             createdAt: Date;
             updatedAt: Date;
             label: string;
@@ -69,8 +69,8 @@ export declare class ProspectsController {
     }>): Promise<{
         ok: boolean;
         columns: {
-            id: string;
             stage: import("@prisma/client").$Enums.LeadStage | null;
+            id: string;
             createdAt: Date;
             updatedAt: Date;
             label: string;
@@ -109,6 +109,7 @@ export declare class ProspectsController {
     }): Promise<{
         ok: boolean;
         lead: {
+            stage: import("@prisma/client").$Enums.LeadStage;
             id: string;
             firstName: string;
             lastName: string | null;
@@ -116,7 +117,6 @@ export declare class ProspectsController {
             phone: string | null;
             tag: string | null;
             source: string | null;
-            stage: import("@prisma/client").$Enums.LeadStage;
             stageUpdatedAt: Date;
             stageId: string | null;
             boardColumnKey: string | null;
@@ -147,6 +147,7 @@ export declare class ProspectsController {
                 email: string;
             } | null;
         } & {
+            stage: import("@prisma/client").$Enums.LeadStage;
             id: string;
             firstName: string;
             lastName: string | null;
@@ -154,7 +155,6 @@ export declare class ProspectsController {
             phone: string | null;
             tag: string | null;
             source: string | null;
-            stage: import("@prisma/client").$Enums.LeadStage;
             stageUpdatedAt: Date;
             stageId: string | null;
             boardColumnKey: string | null;
@@ -192,6 +192,7 @@ export declare class ProspectsController {
                 email: string;
             } | null;
         } & {
+            stage: import("@prisma/client").$Enums.LeadStage;
             id: string;
             firstName: string;
             lastName: string | null;
@@ -199,7 +200,6 @@ export declare class ProspectsController {
             phone: string | null;
             tag: string | null;
             source: string | null;
-            stage: import("@prisma/client").$Enums.LeadStage;
             stageUpdatedAt: Date;
             stageId: string | null;
             boardColumnKey: string | null;
@@ -224,6 +224,7 @@ export declare class ProspectsController {
             email: string;
         } | null;
     } & {
+        stage: import("@prisma/client").$Enums.LeadStage;
         id: string;
         firstName: string;
         lastName: string | null;
@@ -231,7 +232,6 @@ export declare class ProspectsController {
         phone: string | null;
         tag: string | null;
         source: string | null;
-        stage: import("@prisma/client").$Enums.LeadStage;
         stageUpdatedAt: Date;
         stageId: string | null;
         boardColumnKey: string | null;

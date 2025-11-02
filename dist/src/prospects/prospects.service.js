@@ -194,36 +194,44 @@ let ProspectsService = class ProspectsService {
                 });
             }
             catch { }
+            try {
+                await this.ensureStageHistory(leadId, stage);
+            }
+            catch { }
         }
         return { ok: true };
     }
-    async getOpsColumns(from, to) {
-        let configs = await this.prisma.metricConfig.findMany({ orderBy: { order: 'asc' } });
-        if (!configs.length) {
-            await this.prisma.$transaction(DEFAULT_METRICS.map((m) => this.prisma.metricConfig.create({
-                data: {
-                    key: m.key,
-                    label: m.label,
-                    sourcePath: m.sourcePath,
-                    order: m.order,
-                    enabled: m.enabled,
+    async ensureStageHistory(leadId, stage, at) {
+        try {
+            await this.prisma.leadStageHistory?.upsert({
+                where: {
+                    lead_stage_unique: {
+                        leadId,
+                        stage,
+                    },
                 },
-            })));
-            configs = await this.prisma.metricConfig.findMany({ orderBy: { order: 'asc' } });
+                update: {},
+                create: {
+                    leadId,
+                    stage,
+                    occurredAt: at ?? new Date(),
+                },
+            });
         }
-        const fun = await this.reporting.funnel?.(from, to);
-        const columns = configs
-            .filter((c) => c.enabled)
-            .sort((a, b) => a.order - b.order)
-            .map((c) => {
-            const value = getByPath({ funnel: fun }, c.sourcePath);
-            return {
-                key: c.key,
-                label: c.label,
-                count: Number.isFinite(Number(value)) ? Number(value) : 0,
-            };
+        catch (e) {
+        }
+    }
+    async changeStage(leadId, dto) {
+        const normalized = this.safeStage(dto.stage);
+        const updated = await this.prisma.lead.update({
+            where: { id: leadId },
+            data: {
+                stage: normalized,
+                stageUpdatedAt: new Date(),
+            },
         });
-        return { ok: true, columns, period: fun?.period || { from, to } };
+        await this.ensureStageHistory(leadId, normalized);
+        return updated;
     }
     DEFAULT_BOARD_COLUMNS = [
         { label: 'Leads reçus', stage: 'LEADS_RECEIVED', order: 0, enabled: true },
@@ -302,6 +310,7 @@ let ProspectsService = class ProspectsService {
             where: { id: leadId },
             data: { stage: toStage, stageUpdatedAt: new Date(), boardColumnKey: null },
         });
+        await this.ensureStageHistory(leadId, toStage);
         return { ok: true };
     }
     async moveToBoardColumn(leadId, columnKey) {
@@ -424,6 +433,7 @@ let ProspectsService = class ProspectsService {
                 });
             }
             catch { }
+            await this.ensureStageHistory(id, 'WON');
             return { ok: true, lead: updated };
         }
         const updated = await this.prisma.lead.update({
@@ -447,6 +457,7 @@ let ProspectsService = class ProspectsService {
             }
             catch { }
         }
+        await this.ensureStageHistory(id, target);
         return { ok: true, lead: updated };
     }
     async getOne(id) {
@@ -540,6 +551,7 @@ let ProspectsService = class ProspectsService {
             });
         }
         catch { }
+        await this.ensureStageHistory(lead.id, 'LEADS_RECEIVED', lead.createdAt);
         return { ok: true, lead };
     }
     async listActors() {
@@ -656,6 +668,7 @@ let ProspectsService = class ProspectsService {
                                 stageUpdatedAt: new Date(),
                             },
                         });
+                        await this.ensureStageHistory(existing.id, stage);
                         results.updated++;
                     }
                     else {
@@ -680,6 +693,7 @@ let ProspectsService = class ProspectsService {
                             });
                         }
                         catch { }
+                        await this.ensureStageHistory(created.id, stage);
                         results.created++;
                     }
                 }
@@ -704,6 +718,7 @@ let ProspectsService = class ProspectsService {
                         });
                     }
                     catch { }
+                    await this.ensureStageHistory(created.id, stage);
                     results.created++;
                 }
             }

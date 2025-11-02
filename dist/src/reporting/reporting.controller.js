@@ -43,6 +43,9 @@ let ReportingController = class ReportingController {
         const keys = (keysCsv || '').split(',').map(s => s.trim()).filter(Boolean);
         return this.reporting.pipelineMetrics({ keys, from, to, mode });
     }
+    pipelineStageTotals(from, to) {
+        return this.reporting.pipelineStageTotals(from, to);
+    }
     weeklyOps(from, to) {
         return this.reporting.weeklySeries(from, to).then(rows => ({ ok: true, rows }));
     }
@@ -139,6 +142,14 @@ __decorate([
     __metadata("design:paramtypes", [String, String, String, String]),
     __metadata("design:returntype", void 0)
 ], ReportingController.prototype, "pipelineMetrics", null);
+__decorate([
+    (0, common_1.Get)('pipeline-stage-totals'),
+    __param(0, (0, common_1.Query)('from')),
+    __param(1, (0, common_1.Query)('to')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", void 0)
+], ReportingController.prototype, "pipelineStageTotals", null);
 __decorate([
     (0, common_1.Get)('weekly-ops'),
     __param(0, (0, common_1.Query)('from')),
