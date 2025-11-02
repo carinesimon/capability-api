@@ -25,10 +25,10 @@ export declare class AppointmentsService {
             createdAt: Date;
             updatedAt: Date;
             stage: import("@prisma/client").$Enums.LeadStage;
+            source: string | null;
             ghlContactId: string | null;
             phone: string | null;
             tag: string | null;
-            source: string | null;
             stageUpdatedAt: Date;
             stageId: string | null;
             boardColumnKey: string | null;
@@ -40,13 +40,13 @@ export declare class AppointmentsService {
     } & {
         id: string;
         createdAt: Date;
-        userId: string | null;
         leadId: string | null;
-        provider: string;
         externalId: string;
         type: import("@prisma/client").$Enums.AppointmentType;
+        provider: string;
         status: import("@prisma/client").$Enums.AppointmentStatus;
         scheduledAt: Date;
+        userId: string | null;
     }, never, import("@prisma/client/runtime/library").DefaultArgs, import("@prisma/client").Prisma.PrismaClientOptions>;
     findAll(params?: {
         from?: Date;
@@ -74,10 +74,10 @@ export declare class AppointmentsService {
             createdAt: Date;
             updatedAt: Date;
             stage: import("@prisma/client").$Enums.LeadStage;
+            source: string | null;
             ghlContactId: string | null;
             phone: string | null;
             tag: string | null;
-            source: string | null;
             stageUpdatedAt: Date;
             stageId: string | null;
             boardColumnKey: string | null;
@@ -89,13 +89,13 @@ export declare class AppointmentsService {
     } & {
         id: string;
         createdAt: Date;
-        userId: string | null;
         leadId: string | null;
-        provider: string;
         externalId: string;
         type: import("@prisma/client").$Enums.AppointmentType;
+        provider: string;
         status: import("@prisma/client").$Enums.AppointmentStatus;
         scheduledAt: Date;
+        userId: string | null;
     })[]>;
     timeToFirstContactMinutes(leadId: string): Promise<number | null>;
 }
