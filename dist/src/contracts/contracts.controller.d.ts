@@ -1,5 +1,6 @@
 import { ContractsService } from './contracts.service';
 import { CreateContractDto } from './dto/create-contract.dto';
+
 export declare class ContractsController {
     private readonly service;
     constructor(service: ContractsService);
