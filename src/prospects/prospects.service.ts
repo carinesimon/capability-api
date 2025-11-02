@@ -122,10 +122,6 @@ const EVENT_BASED_STAGES: LeadStage[] = [
 
 type OpsColumn = { key: PipelineMetricKey; label: string; count: number };
 
-/* =========================================================
-   ====================  EXISTANT  =========================
-   ========================================================= */
-
 type BoardArgs = { from?: string; to?: string; limit?: number };
 type MoveStageBody = { stage: LeadStage; saleValue?: number; confirmSame?: boolean };
 
@@ -240,99 +236,119 @@ export class ProspectsService {
   }
 
   /* ---------- Déplacement dans une “colonne libre” ---------- */
-  async moveToFreeColumn(leadId: string, columnKey: string) {
-    if (!columnKey) throw new BadRequestException('columnKey requis');
+ // src/prospects/prospects.service.ts
 
-    const [lead, column] = await Promise.all([
-      this.prisma.lead.findUnique({ where: { id: leadId } }),
-      this.prisma.prospectsColumnConfig.findUnique({ where: { id: columnKey } }).catch(() => null),
-    ]);
-    if (!lead) throw new NotFoundException('Lead introuvable');
+async moveToFreeColumn(leadId: string, columnKey: string) {
+  if (!columnKey) throw new BadRequestException('columnKey requis');
 
-    const prev = (lead as any).boardColumnKey ?? null;
+  const [lead, column] = await Promise.all([
+    this.prisma.lead.findUnique({ where: { id: leadId } }),
+    this.prisma.prospectsColumnConfig.findUnique({ where: { id: columnKey } }).catch(() => null),
+  ]);
+  if (!lead) throw new NotFoundException('Lead introuvable');
 
-    // journal visuel (si table dispo)
+  const prev = (lead as any).boardColumnKey ?? null;
+
+  // journal visuel (optionnel)
+  try {
+    await (this.prisma as any).leadBoardEvent?.create?.({
+      data: { leadId, columnKey, previousKey: prev, movedAt: new Date() },
+    });
+  } catch {}
+
+  // MAJ position visuelle
+  try {
+    await this.prisma.lead.update({
+      where: { id: leadId },
+      data: { boardColumnKey: columnKey as any },
+    });
+  } catch {}
+
+  // ⬇️ si la colonne est mappée à un vrai stage → on doit TOUT faire
+  if (column?.stage) {
+    const stage = column.stage as any; // LeadStage
+
+    const type = STAGE_TO_EVENT[stage];
+    // 1) event cumulatif (comme avant)
     try {
-      await (this.prisma as any).leadBoardEvent?.create?.({
-        data: { leadId, columnKey, previousKey: prev, movedAt: new Date() },
+      await (this.prisma as any).leadEvent?.create?.({
+        data: {
+          leadId,
+          type,
+          meta: { source: 'board-drop', columnKey, stage },
+          occurredAt: new Date(),
+        },
       });
     } catch {}
 
-    // MAJ position visuelle
+    // 2) on met à jour le lead (comme avant)
     try {
       await this.prisma.lead.update({
         where: { id: leadId },
-        data: { boardColumnKey: columnKey as any },
+        data: { stage, stageUpdatedAt: new Date() },
       });
     } catch {}
 
-    // Si colonne mappée à un stage → log event + refléter le stage réel
-    if (column?.stage) {
-      const stage = column.stage as LeadStage;
-      const type = STAGE_TO_EVENT[stage];
-
-      // leadEvent (cumulatif pour le reporting)
-      try {
-        await (this.prisma as any).leadEvent?.create?.({
-          data: {
-            leadId,
-            type,
-            meta: { source: 'board-drop', columnKey, stage },
-            occurredAt: new Date(),
-          },
-        });
-      } catch {}
-
-      // refléter le stage sur le Lead
-      try {
-        await this.prisma.lead.update({
-          where: { id: leadId },
-          data: { stage, stageUpdatedAt: new Date() },
-        });
-      } catch {}
-    }
-
-    return { ok: true };
+    // 3) ✅ NOUVEAU : on fige l’entrée dans ce stage pour le reporting cumulé
+    try {
+      await this.ensureStageHistory(leadId, stage);
+    } catch {}
   }
 
-  async getOpsColumns(from?: string, to?: string): Promise<{ ok: true; columns: OpsColumn[]; period: { from?: string; to?: string } }> {
-    let configs = await this.prisma.metricConfig.findMany({ orderBy: { order: 'asc' } });
-    if (!configs.length) {
-      await this.prisma.$transaction(
-        DEFAULT_METRICS.map((m) =>
-          this.prisma.metricConfig.create({
-            data: {
-              key: m.key,
-              label: m.label,
-              sourcePath: m.sourcePath,
-              order: m.order,
-              enabled: m.enabled,
-            },
-          }),
-        ),
-      );
-      configs = await this.prisma.metricConfig.findMany({ orderBy: { order: 'asc' } });
-    }
-
-    const fun = await (this.reporting as any).funnel?.(from, to);
-    const columns: OpsColumn[] = configs
-      .filter((c) => c.enabled)
-      .sort((a, b) => a.order - b.order)
-      .map((c) => {
-        const value = getByPath({ funnel: fun }, c.sourcePath);
-        return {
-          key: c.key as PipelineMetricKey,
-          label: c.label,
-          count: Number.isFinite(Number(value)) ? Number(value) : 0,
-        };
-      });
-
-    return { ok: true, columns, period: fun?.period || { from, to } };
-  }
+  return { ok: true };
+}
 
   /* =========================================================
      =======  ProspectsColumnConfig (CRUD)  ========
      ========================================================= */
+
+  /**
+   * Historique "ce lead est déjà passé dans ce stage au moins 1 fois"
+   * On passe par `as any` parce que tu n'as pas encore généré le modèle Prisma.
+   */
+  private async ensureStageHistory(leadId: string, stage: string, at?: Date) {
+    try {
+      await (this.prisma as any).leadStageHistory?.upsert({
+        where: {
+          lead_stage_unique: {
+            leadId,
+            stage,
+          },
+        },
+        update: {},
+        create: {
+          leadId,
+          stage,
+          occurredAt: at ?? new Date(),
+        },
+      });
+    } catch (e) {
+      // on ne casse pas le flux si la table n'existe pas encore
+    }
+  }
+
+  /**
+   * appelé par /prospects/:id/stage (et aussi par ton alias /leads/:id/stage)
+   * le front peut envoyer "DEMANDE_APPEL" → on remappe vers l'enum Prisma
+   */
+  async changeStage(leadId: string, dto: { stage: string }) {
+    // on normalise d'abord la valeur envoyée par le front
+    const normalized = this.safeStage(dto.stage);
+
+    // 1) update le lead
+    const updated = await this.prisma.lead.update({
+      where: { id: leadId },
+      data: {
+        stage: normalized,
+        stageUpdatedAt: new Date(),
+      },
+    });
+
+    // 2) on mémorise l'entrée dans ce stage (cumulatif)
+    await this.ensureStageHistory(leadId, normalized);
+
+    return updated;
+  }
 
   private DEFAULT_BOARD_COLUMNS: Array<{ label: string; stage?: LeadStage | null; order: number; enabled: boolean }> = [
     { label: 'Leads reçus',           stage: 'LEADS_RECEIVED', order: 0,  enabled: true },
@@ -441,11 +457,13 @@ export class ProspectsService {
       data: { stage: toStage, stageUpdatedAt: new Date(), boardColumnKey: null },
     });
 
+    // on garde aussi la trace "est déjà passé dans ce stage"
+    await this.ensureStageHistory(leadId, toStage);
+
     return { ok: true };
   }
 
   async moveToBoardColumn(leadId: string, columnKey: string) {
-    // Déplacement colonne libre (pas de StageEvent)
     await this.prisma.lead.update({
       where: { id: leadId },
       data: { boardColumnKey: columnKey, stageUpdatedAt: new Date() },
@@ -578,6 +596,9 @@ export class ProspectsService {
         });
       } catch {}
 
+      // et aussi l'historique stage
+      await this.ensureStageHistory(id, 'WON');
+
       return { ok: true, lead: updated };
     }
 
@@ -604,6 +625,9 @@ export class ProspectsService {
         });
       } catch {}
     }
+
+    // on garde aussi la trace "déjà passé"
+    await this.ensureStageHistory(id, target);
 
     return { ok: true, lead: updated };
   }
@@ -716,6 +740,9 @@ export class ProspectsService {
         },
       });
     } catch {}
+
+    // historique "déjà passé dans LEADS_RECEIVED"
+    await this.ensureStageHistory(lead.id, 'LEADS_RECEIVED', lead.createdAt);
 
     return { ok: true, lead };
   }
@@ -851,6 +878,8 @@ export class ProspectsService {
                 stageUpdatedAt: new Date(),
               },
             });
+            // on mémorise aussi dans l'historique
+            await this.ensureStageHistory(existing.id, stage);
             results.updated++;
           } else {
             const created = await this.prisma.lead.create({
@@ -868,12 +897,12 @@ export class ProspectsService {
                 closerId: closer ? closer.id : undefined,
               },
             });
-            // tracer la création
             try {
               await (this.prisma as any).leadEvent?.create?.({
                 data: { leadId: created.id, type: 'LEAD_CREATED', occurredAt: created.createdAt, meta: { source: 'importCsv' } },
               });
             } catch {}
+            await this.ensureStageHistory(created.id, stage);
             results.created++;
           }
         } else {
@@ -896,6 +925,7 @@ export class ProspectsService {
               data: { leadId: created.id, type: 'LEAD_CREATED', occurredAt: created.createdAt, meta: { source: 'importCsv' } },
             });
           } catch {}
+          await this.ensureStageHistory(created.id, stage);
           results.created++;
         }
       } catch {
@@ -1051,28 +1081,26 @@ export class ProspectsService {
    * - Si type === "STAGE_ENTERED" et stage fourni (FR), on mappe -> LeadStage
    *   puis on appelle updateLeadStage pour produire un StageEvent (idempotence).
    */
-    async addEvent(leadId: string, body: CreateProspectEventDto) {
-      const occurredAt = body.occurredAt ? new Date(body.occurredAt) : new Date();
-      // ✅ on ne lit plus body.source (absent du DTO)
-      const meta = { ...(body as any), source: 'api' as const };
+  async addEvent(leadId: string, body: CreateProspectEventDto) {
+    const occurredAt = body.occurredAt ? new Date(body.occurredAt) : new Date();
+    const meta = { ...(body as any), source: 'api' as const };
 
-      const ev = await (this.prisma as any).leadEvent?.create?.({
-        data: { leadId, type: body.type, occurredAt, meta },
-      });
+    const ev = await (this.prisma as any).leadEvent?.create?.({
+      data: { leadId, type: body.type, occurredAt, meta },
+    });
 
-      if (body.type === 'STAGE_ENTERED' && body.stage) {
-        const lead = await this.prisma.lead.findUnique({ where: { id: leadId } });
-        if (!lead) throw new NotFoundException('Lead introuvable');
+    if (body.type === 'STAGE_ENTERED' && body.stage) {
+      const lead = await this.prisma.lead.findUnique({ where: { id: leadId } });
+      if (!lead) throw new NotFoundException('Lead introuvable');
 
-        const stageDto: StageDto | undefined =
-          typeof body.stage === 'string' ? (normalizeStage(body.stage) || (body.stage as StageDto)) : body.stage;
-        if (!stageDto) throw new BadRequestException('Stage invalide');
+      const stageDto: StageDto | undefined =
+        typeof body.stage === 'string' ? (normalizeStage(body.stage) || (body.stage as StageDto)) : body.stage;
+      if (!stageDto) throw new BadRequestException('Stage invalide');
 
-        const toStage = mapStageDtoToLeadStage(stageDto);
-        await this.updateLeadStage(leadId, toStage, 'api'); // ✅ source forcée
-      }
-
-      return { ok: true, event: ev ?? null };
+      const toStage = mapStageDtoToLeadStage(stageDto);
+      await this.updateLeadStage(leadId, toStage, 'api');
     }
 
+    return { ok: true, event: ev ?? null };
+  }
 }
