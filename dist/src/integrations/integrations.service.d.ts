@@ -2,6 +2,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { AutoAssignService } from './auto-assign.service';
 import { StageEventsService } from '../modules/leads/stage-events.service';
+
 type ReplayOptions = {
     mode?: 'upsert' | 'createNew';
 };
