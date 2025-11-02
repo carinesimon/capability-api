@@ -1,5 +1,6 @@
 import { PrismaService } from '../../prisma/prisma.service';
 import { StageEventsService } from '../../modules/leads/stage-events.service';
+
 type InboxItem = {
     id: string;
     receivedAt: string;
