@@ -525,3 +525,17 @@ model StageEvent {
   @@index([leadId, toStage, occurredAt])
   @@unique([leadId, toStage]) // 1er passage seulement
 }
+
+// prisma/schema.prisma
+
+model LeadStageHistory {
+  id         String   @id @default(cuid())
+  leadId     String
+  stage      String   // ex: "LEAD_RECU", "DEMANDE_APPEL", ...
+  occurredAt DateTime @default(now())
+
+  // un même lead ne doit être compté qu’une seule fois par stage
+  @@unique([leadId, stage], name: "lead_stage_unique")
+  @@index([stage, occurredAt], name: "lead_stage_by_stage_date")
+}
+
