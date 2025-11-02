@@ -2,9 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-
-import { LeadsModule } from './leads/leads.module';
-
+import { LeadsModule } from '../src/modules/leads/leads.module'; 
 import { AdminModule } from './admin/admin.module';
 import { PrismaModule } from './prisma/prisma.module';   // ✅ Injection Prisma
 import { AuthModule } from './auth/auth.module';
@@ -19,12 +17,8 @@ import { WebhooksModule } from './webhooks/webhooks.module';
 import { ProspectsModule } from './prospects/prospects.module';
 import { GhlModule } from './integrations/ghl/ghl.module';
 import { IntegrationsModule } from './integrations/integrations.module';
-
-// si ton dossier est vraiment `src/modules/metrics/...` tu laisses comme ça
-// si c’est `src/metrics/...` tu remplaces par "./metrics/metrics.module"
 import { MetricsModule } from './modules/metrics/metrics.module';
-
-import { LeadsAliasController } from './leads/leads-alias.controller';
+import { LeadsAliasController } from "./leads/leads-alias.controller";
 
 @Module({
   imports: [
@@ -45,7 +39,7 @@ import { LeadsAliasController } from './leads/leads-alias.controller';
     GhlModule,
     IntegrationsModule,
   ],
-  controllers: [AppController, LeadsAliasController],
+  controllers: [AppController, LeadsAliasController,],
   providers: [AppService],
 })
 export class AppModule {}
