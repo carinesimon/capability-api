@@ -16,6 +16,7 @@ export class IntegrationsController {
   getLeadStages() {
     // Renvoie les valeurs EXACTES de l’ENUM (ton schéma)
     return { stages: Object.values(LeadStage) };
+    
   }
 
   @Post('automations')
