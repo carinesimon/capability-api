@@ -1,4 +1,5 @@
 import { IntegrationsService } from './integrations.service';
+
 export declare class HookController {
     private readonly svc;
     constructor(svc: IntegrationsService);
