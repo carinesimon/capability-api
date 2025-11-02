@@ -14,6 +14,7 @@ const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../prisma/prisma.service");
 const client_1 = require("@prisma/client");
 const auto_assign_service_1 = require("./auto-assign.service");
+const stage_events_service_1 = require("../modules/leads/stage-events.service");
 function getByPath(obj, path) {
     if (!obj || !path)
         return undefined;
@@ -26,14 +27,15 @@ function baseUrl() {
     return raw.endsWith('/') ? raw.slice(0, -1) : raw;
 }
 function routeKey() {
-    return Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10);
+    return (Math.random().toString(36).slice(2, 10) +
+        Math.random().toString(36).slice(2, 10));
 }
 function makeAbsoluteWebhookUrl(routeKeyStr) {
     const b = baseUrl();
     return b ? `${b}/hook/${routeKeyStr}` : `/hook/${routeKeyStr}`;
 }
 function mappingGateReason(mapped) {
-    const safeEmail = mapped?.email && String(mapped.email).includes('@')
+    const safeEmail = mapped.email && String(mapped.email).includes('@')
         ? String(mapped.email).toLowerCase()
         : null;
     const hasIdentifier = Boolean(safeEmail || mapped?.phone || mapped?.ghlContactId);
@@ -73,9 +75,11 @@ function toEnumStage(val) {
 let IntegrationsService = class IntegrationsService {
     prisma;
     autoAssign;
-    constructor(prisma, autoAssign) {
+    stageEvents;
+    constructor(prisma, autoAssign, stageEvents) {
         this.prisma = prisma;
         this.autoAssign = autoAssign;
+        this.stageEvents = stageEvents;
     }
     async createAutomation(name) {
         const rk = routeKey();
@@ -111,9 +115,19 @@ let IntegrationsService = class IntegrationsService {
     async listAutomationsWithAbsoluteUrl() {
         const rows = await this.prisma.automation.findMany({
             orderBy: { updatedAt: 'desc' },
-            select: { id: true, name: true, status: true, routeKey: true, createdAt: true, updatedAt: true },
+            select: {
+                id: true,
+                name: true,
+                status: true,
+                routeKey: true,
+                createdAt: true,
+                updatedAt: true,
+            },
         });
-        return rows.map((r) => ({ ...r, webhookUrl: makeAbsoluteWebhookUrl(r.routeKey) }));
+        return rows.map((r) => ({
+            ...r,
+            webhookUrl: makeAbsoluteWebhookUrl(r.routeKey),
+        }));
     }
     async getAutomation(id) {
         const a = await this.prisma.automation.findUnique({ where: { id } });
@@ -140,7 +154,9 @@ let IntegrationsService = class IntegrationsService {
             ...(body.name ? { name: body.name } : {}),
             ...(body.status ? { status: body.status } : {}),
             ...(Object.prototype.hasOwnProperty.call(body, 'mappingJson')
-                ? { mappingJson: (body.mappingJson ?? client_1.Prisma.JsonNull) }
+                ? {
+                    mappingJson: (body.mappingJson ?? client_1.Prisma.JsonNull),
+                }
                 : {}),
         };
         const a = await this.prisma.automation.update({ where: { id }, data });
@@ -168,7 +184,14 @@ let IntegrationsService = class IntegrationsService {
             where: { automationId },
             orderBy: { receivedAt: 'desc' },
             take: limit,
-            select: { id: true, receivedAt: true, status: true, error: true, result: true, payload: true },
+            select: {
+                id: true,
+                receivedAt: true,
+                status: true,
+                error: true,
+                result: true,
+                payload: true,
+            },
         });
     }
     async replayEvent(eventId, opts) {
@@ -206,37 +229,61 @@ let IntegrationsService = class IntegrationsService {
                 where: { id: ev.id },
                 data: {
                     status: 'PROCESSED',
-                    result: { preview: mapped, stage, report, replay: true, dryRun: true, mode },
+                    result: {
+                        preview: mapped,
+                        stage,
+                        report,
+                        replay: true,
+                        dryRun: true,
+                        mode,
+                    },
                     processedAt: new Date(),
                 },
             });
             return { ok: true, leadId: null, dryRun: true, mode };
         }
-        const safeEmail = mapped.email && String(mapped.email).includes('@') ? String(mapped.email).toLowerCase() : null;
+        const safeEmail = mapped.email && String(mapped.email).includes('@')
+            ? String(mapped.email).toLowerCase()
+            : null;
         let existing = null;
         if (mode !== 'createNew') {
-            if (safeEmail)
-                existing = await this.prisma.lead.findUnique({ where: { email: safeEmail } }).catch(() => null);
+            if (safeEmail) {
+                existing = await this.prisma.lead
+                    .findUnique({ where: { email: safeEmail } })
+                    .catch(() => null);
+            }
             if (!existing && mapped.ghlContactId) {
-                existing = await this.prisma.lead.findUnique({ where: { ghlContactId: String(mapped.ghlContactId) } }).catch(() => null);
+                existing = await this.prisma.lead
+                    .findUnique({ where: { ghlContactId: String(mapped.ghlContactId) } })
+                    .catch(() => null);
             }
         }
         let leadId;
+        let createdNow = false;
         if (existing) {
-            const updated = await this.prisma.lead.update({ where: { id: existing.id }, data: this.buildUpdate(mapped) });
+            const updated = await this.prisma.lead.update({
+                where: { id: existing.id },
+                data: this.buildUpdate(mapped),
+            });
             leadId = updated.id;
         }
         else {
             try {
-                const created = await this.prisma.lead.create({ data: this.buildCreate(mapped, stage) });
+                const created = await this.prisma.lead.create({
+                    data: this.buildCreate(mapped, stage),
+                });
                 leadId = created.id;
+                createdNow = true;
             }
             catch (e) {
-                if (mode === 'createNew' && e?.code === 'P2002' && e?.meta?.target?.includes?.('email')) {
+                if (mode === 'createNew' &&
+                    e?.code === 'P2002' &&
+                    e?.meta?.target?.includes?.('email')) {
                     const created = await this.prisma.lead.create({
                         data: { ...this.buildCreate(mapped, stage), email: null },
                     });
                     leadId = created.id;
+                    createdNow = true;
                 }
                 else {
                     throw e;
@@ -244,7 +291,7 @@ let IntegrationsService = class IntegrationsService {
             }
         }
         await this.connectActorsIfAny(leadId, mapped);
-        const assignRes = await this.autoAssign.apply({
+        await this.autoAssign.apply({
             leadId,
             automation: {
                 id: auto.id,
@@ -256,11 +303,19 @@ let IntegrationsService = class IntegrationsService {
             dryRun: false,
         });
         if (stage) {
+            const prevStage = existing?.stage ??
+                (createdNow ? 'LEADS_RECEIVED' : 'LEADS_RECEIVED');
+            await this.stageEvents.recordStageEntry({
+                leadId,
+                fromStage: prevStage,
+                toStage: stage,
+                source: 'automation:replay',
+                externalId: ev.id,
+            });
             await this.prisma.lead.update({
                 where: { id: leadId },
                 data: { stage, stageUpdatedAt: new Date(), boardColumnKey: null },
             });
-            await this.safeCreateLeadEvent(leadId, this.stageToEvent(stage), { from: 'replay' });
         }
         await this.prisma.automationEvent.update({
             where: { id: ev.id },
@@ -277,7 +332,9 @@ let IntegrationsService = class IntegrationsService {
         return { id: res.eventId };
     }
     async processAutomationHook(routeKeyStr, payload) {
-        const auto = await this.prisma.automation.findUnique({ where: { routeKey: routeKeyStr } });
+        const auto = await this.prisma.automation.findUnique({
+            where: { routeKey: routeKeyStr },
+        });
         if (!auto)
             throw new common_1.NotFoundException('Automation introuvable');
         const payloadHash = this.hash(JSON.stringify(payload || {}));
@@ -308,9 +365,10 @@ let IntegrationsService = class IntegrationsService {
                     processedAt: new Date(),
                 },
             });
-            return { ok: true, ignored: true, reason: gate };
+            return { ok: true, ignored: true, reason: gate, eventId: event.id };
         }
-        if (auto.status === client_1.AutomationStatus.DRY_RUN || auto.status === client_1.AutomationStatus.OFF) {
+        if (auto.status === client_1.AutomationStatus.DRY_RUN ||
+            auto.status === client_1.AutomationStatus.OFF) {
             await this.prisma.automationEvent.update({
                 where: { id: event.id },
                 data: {
@@ -319,27 +377,53 @@ let IntegrationsService = class IntegrationsService {
                     processedAt: new Date(),
                 },
             });
-            return { ok: true, dryRun: true, preview: mapped, stage, report };
+            return {
+                ok: true,
+                dryRun: true,
+                preview: mapped,
+                stage,
+                report,
+                eventId: event.id,
+            };
         }
-        const safeEmail = mapped.email && String(mapped.email).includes('@') ? String(mapped.email).toLowerCase() : null;
+        const safeEmail = mapped.email && String(mapped.email).includes('@')
+            ? String(mapped.email).toLowerCase()
+            : null;
         let where = undefined;
         if (safeEmail)
             where = { email: safeEmail };
         else if (mapped.ghlContactId)
             where = { ghlContactId: String(mapped.ghlContactId) };
+        let previousStage;
         let lead;
         try {
-            lead = await this.prisma.lead.upsert({
-                where: where ?? { id: '__nope__' },
-                update: this.buildUpdate(mapped),
-                create: this.buildCreate(mapped, stage),
-            });
+            if (where) {
+                const before = await this.prisma.lead.findUnique({
+                    where,
+                    select: { stage: true },
+                });
+                previousStage = before?.stage;
+                lead = await this.prisma.lead.upsert({
+                    where,
+                    update: this.buildUpdate(mapped),
+                    create: this.buildCreate(mapped, stage),
+                });
+            }
+            else {
+                lead = await this.prisma.lead.create({
+                    data: this.buildCreate(mapped, stage),
+                });
+                previousStage = 'LEADS_RECEIVED';
+            }
         }
         catch {
-            lead = await this.prisma.lead.create({ data: this.buildCreate(mapped, stage) });
+            lead = await this.prisma.lead.create({
+                data: this.buildCreate(mapped, stage),
+            });
+            previousStage = 'LEADS_RECEIVED';
         }
         await this.connectActorsIfAny(lead.id, mapped);
-        const assignRes = await this.autoAssign.apply({
+        await this.autoAssign.apply({
             leadId: lead.id,
             automation: {
                 id: auto.id,
@@ -351,11 +435,17 @@ let IntegrationsService = class IntegrationsService {
             dryRun: false,
         });
         if (stage) {
+            await this.stageEvents.recordStageEntry({
+                leadId: lead.id,
+                fromStage: previousStage ?? lead.stage ?? 'LEADS_RECEIVED',
+                toStage: stage,
+                source: 'automation:webhook',
+                externalId: event.id,
+            });
             await this.prisma.lead.update({
                 where: { id: lead.id },
                 data: { stage, stageUpdatedAt: new Date(), boardColumnKey: null },
             });
-            await this.safeCreateLeadEvent(lead.id, this.stageToEvent(stage), { from: 'automation' });
         }
         await this.prisma.automationEvent.update({
             where: { id: event.id },
@@ -365,10 +455,13 @@ let IntegrationsService = class IntegrationsService {
                 processedAt: new Date(),
             },
         });
-        return { ok: true, leadId: lead.id, stage, report };
+        return { ok: true, leadId: lead.id, stage, report, eventId: event.id };
     }
     async deleteLeadCompletely(leadId) {
-        const exists = await this.prisma.lead.findUnique({ where: { id: leadId }, select: { id: true } });
+        const exists = await this.prisma.lead.findUnique({
+            where: { id: leadId },
+            select: { id: true },
+        });
         if (!exists)
             throw new common_1.NotFoundException('Lead not found');
         await this.prisma.$transaction(async (tx) => {
@@ -418,20 +511,36 @@ let IntegrationsService = class IntegrationsService {
         const setEmail = m.setterEmail ? String(m.setterEmail).toLowerCase() : null;
         const closEmail = m.closerEmail ? String(m.closerEmail).toLowerCase() : null;
         if (setEmail) {
-            const u = await this.prisma.user.findFirst({ where: { email: setEmail, role: client_1.Role.SETTER, isActive: true } });
+            const u = await this.prisma.user.findFirst({
+                where: { email: setEmail, role: client_1.Role.SETTER, isActive: true },
+            });
             if (u)
-                await this.prisma.lead.update({ where: { id: leadId }, data: { setterId: u.id } });
+                await this.prisma.lead.update({
+                    where: { id: leadId },
+                    data: { setterId: u.id },
+                });
         }
         if (closEmail) {
-            const u = await this.prisma.user.findFirst({ where: { email: closEmail, role: client_1.Role.CLOSER, isActive: true } });
+            const u = await this.prisma.user.findFirst({
+                where: { email: closEmail, role: client_1.Role.CLOSER, isActive: true },
+            });
             if (u)
-                await this.prisma.lead.update({ where: { id: leadId }, data: { closerId: u.id } });
+                await this.prisma.lead.update({
+                    where: { id: leadId },
+                    data: { closerId: u.id },
+                });
         }
         if (m.setterId) {
-            await this.prisma.lead.update({ where: { id: leadId }, data: { setterId: String(m.setterId) } });
+            await this.prisma.lead.update({
+                where: { id: leadId },
+                data: { setterId: String(m.setterId) },
+            });
         }
         if (m.closerId) {
-            await this.prisma.lead.update({ where: { id: leadId }, data: { closerId: String(m.closerId) } });
+            await this.prisma.lead.update({
+                where: { id: leadId },
+                data: { closerId: String(m.closerId) },
+            });
         }
     }
     async safeCreateLeadEvent(leadId, type, meta) {
@@ -526,6 +635,8 @@ let IntegrationsService = class IntegrationsService {
 exports.IntegrationsService = IntegrationsService;
 exports.IntegrationsService = IntegrationsService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService, auto_assign_service_1.AutoAssignService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        auto_assign_service_1.AutoAssignService,
+        stage_events_service_1.StageEventsService])
 ], IntegrationsService);
 //# sourceMappingURL=integrations.service.js.map

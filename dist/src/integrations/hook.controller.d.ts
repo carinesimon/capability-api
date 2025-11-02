@@ -4,6 +4,6 @@ export declare class HookController {
     constructor(svc: IntegrationsService);
     receiveHook(routeKey: string, req: any, headers: Record<string, any>): Promise<{
         ok: boolean;
-        eventId: any;
+        eventId: string;
     }>;
 }

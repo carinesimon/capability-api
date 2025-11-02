@@ -1,4 +1,5 @@
 import { PrismaService } from '../../prisma/prisma.service';
+import { StageEventsService } from '../../modules/leads/stage-events.service';
 type InboxItem = {
     id: string;
     receivedAt: string;
@@ -11,7 +12,8 @@ type InboxItem = {
 };
 export declare class GhlService {
     private prisma;
-    constructor(prisma: PrismaService);
+    private readonly stageEvents;
+    constructor(prisma: PrismaService, stageEvents: StageEventsService);
     deduplicate(eventId?: string): Promise<void>;
     upsertContact(args: {
         firstName?: string;
@@ -36,10 +38,10 @@ export declare class GhlService {
         createdAt: Date;
         updatedAt: Date;
         stage: import("@prisma/client").$Enums.LeadStage;
+        source: string | null;
         ghlContactId: string | null;
         phone: string | null;
         tag: string | null;
-        source: string | null;
         stageUpdatedAt: Date;
         stageId: string | null;
         boardColumnKey: string | null;

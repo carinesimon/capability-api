@@ -49,6 +49,7 @@ const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const crypto = __importStar(require("crypto"));
 const qs = __importStar(require("querystring"));
+const stage_events_service_1 = require("../../modules/leads/stage-events.service");
 function ensureDir(dir) {
     if (!fs.existsSync(dir))
         fs.mkdirSync(dir, { recursive: true });
@@ -107,8 +108,10 @@ function mapStageNameToLeadStage(name) {
 }
 let GhlService = class GhlService {
     prisma;
-    constructor(prisma) {
+    stageEvents;
+    constructor(prisma, stageEvents) {
         this.prisma = prisma;
+        this.stageEvents = stageEvents;
     }
     async deduplicate(eventId) {
         if (!eventId)
@@ -139,7 +142,7 @@ let GhlService = class GhlService {
                 : null);
         const mapped = mapStageNameToLeadStage(args.stage || undefined);
         if (!lead) {
-            return this.prisma.lead.create({
+            const created = await this.prisma.lead.create({
                 data: {
                     firstName: 'Unknown',
                     lastName: null,
@@ -150,6 +153,16 @@ let GhlService = class GhlService {
                     ...(mapped === 'WON' && args.saleValue != null ? { saleValue: args.saleValue } : {}),
                 },
             });
+            if (mapped) {
+                await this.stageEvents.recordStageEntry({
+                    leadId: created.id,
+                    fromStage: 'LEADS_RECEIVED',
+                    toStage: mapped,
+                    source: 'webhook:ghl:opportunity',
+                    externalId: args.ghlContactId ?? args.contactEmail ?? undefined,
+                });
+            }
+            return created;
         }
         const update = {};
         if (mapped) {
@@ -157,6 +170,13 @@ let GhlService = class GhlService {
             update.stageUpdatedAt = new Date();
             if (mapped === 'WON' && args.saleValue != null)
                 update.saleValue = args.saleValue;
+            await this.stageEvents.recordStageEntry({
+                leadId: lead.id,
+                fromStage: lead.stage ?? 'LEADS_RECEIVED',
+                toStage: mapped,
+                source: 'webhook:ghl:opportunity',
+                externalId: args.ghlContactId ?? args.contactEmail ?? undefined,
+            });
         }
         if (args.ghlContactId && !lead.ghlContactId)
             update.ghlContactId = args.ghlContactId;
@@ -179,31 +199,65 @@ let GhlService = class GhlService {
             const scheduledAt = args.startTime ? new Date(args.startTime) : new Date();
             const type = (args.type || '').toUpperCase();
             const status = (args.status || '').toUpperCase();
-            if (args.id) {
-                return await this.prisma.appointment.upsert({
+            const appt = args.id
+                ? await this.prisma.appointment.upsert({
                     where: { id: args.id },
                     update: {
-                        type, status, scheduledAt,
+                        type,
+                        status,
+                        scheduledAt,
                         ...(leadId ? { leadId } : {}),
                         ...(user?.id ? { userId: user.id } : {}),
                     },
                     create: {
                         id: args.id,
-                        type, status, scheduledAt,
+                        type,
+                        status,
+                        scheduledAt,
                         ...(leadId ? { leadId } : {}),
                         ...(user?.id ? { userId: user.id } : {}),
                     },
-                });
-            }
-            else {
-                return await this.prisma.appointment.create({
+                })
+                : await this.prisma.appointment.create({
                     data: {
-                        type, status, scheduledAt,
+                        type,
+                        status,
+                        scheduledAt,
                         ...(leadId ? { leadId } : {}),
                         ...(user?.id ? { userId: user.id } : {}),
                     },
                 });
+            if (leadId) {
+                const toStage = (() => {
+                    if (type === 'RV1' && status === 'HONORED')
+                        return 'RV1_HONORED';
+                    if (type === 'RV1')
+                        return 'RV1_PLANNED';
+                    if (type === 'RV0' && status === 'HONORED')
+                        return 'RV0_HONORED';
+                    if (type === 'RV0')
+                        return 'RV0_PLANNED';
+                    if (type === 'RV2' && status === 'HONORED')
+                        return 'RV2_HONORED';
+                    if (type === 'RV2')
+                        return 'RV2_PLANNED';
+                    return null;
+                })();
+                if (toStage) {
+                    await this.stageEvents.recordStageEntry({
+                        leadId,
+                        fromStage: lead?.stage ?? 'LEADS_RECEIVED',
+                        toStage: toStage,
+                        source: 'webhook:ghl:appointment',
+                        externalId: args.id ?? undefined,
+                    });
+                    await this.prisma.lead.update({
+                        where: { id: leadId },
+                        data: { stage: toStage, stageUpdatedAt: new Date(), boardColumnKey: null },
+                    });
+                }
             }
+            return appt;
         }
         catch {
             return { ok: true };
@@ -352,6 +406,7 @@ let GhlService = class GhlService {
 exports.GhlService = GhlService;
 exports.GhlService = GhlService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        stage_events_service_1.StageEventsService])
 ], GhlService);
 //# sourceMappingURL=ghl.service.js.map

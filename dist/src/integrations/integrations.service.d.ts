@@ -1,13 +1,15 @@
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import { AutoAssignService } from './auto-assign.service';
+import { StageEventsService } from '../modules/leads/stage-events.service';
 type ReplayOptions = {
     mode?: 'upsert' | 'createNew';
 };
 export declare class IntegrationsService {
     private prisma;
     private readonly autoAssign;
-    constructor(prisma: PrismaService, autoAssign: AutoAssignService);
+    private readonly stageEvents;
+    constructor(prisma: PrismaService, autoAssign: AutoAssignService, stageEvents: StageEventsService);
     createAutomation(name: string): Promise<{
         id: string;
         name: string;
@@ -100,12 +102,13 @@ export declare class IntegrationsService {
         dryRun?: undefined;
     }>;
     receiveWebhook(routeKey: string, _contentType: string, payload: any): Promise<{
-        id: any;
+        id: string;
     }>;
     processAutomationHook(routeKeyStr: string, payload: any): Promise<{
         ok: boolean;
         ignored: boolean;
         reason: string;
+        eventId: string;
         dryRun?: undefined;
         preview?: undefined;
         stage?: undefined;
@@ -117,6 +120,7 @@ export declare class IntegrationsService {
         preview: any;
         stage: import("@prisma/client").$Enums.LeadStage | undefined;
         report: any;
+        eventId: string;
         ignored?: undefined;
         reason?: undefined;
         leadId?: undefined;
@@ -125,6 +129,7 @@ export declare class IntegrationsService {
         leadId: any;
         stage: import("@prisma/client").$Enums.LeadStage | undefined;
         report: any;
+        eventId: string;
         ignored?: undefined;
         reason?: undefined;
         dryRun?: undefined;

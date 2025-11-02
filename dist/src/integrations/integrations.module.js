@@ -13,12 +13,13 @@ const integrations_service_1 = require("./integrations.service");
 const integrations_controller_1 = require("./integrations.controller");
 const hook_controller_1 = require("./hook.controller");
 const auto_assign_service_1 = require("./auto-assign.service");
+const leads_module_1 = require("../modules/leads/leads.module");
 let IntegrationsModule = class IntegrationsModule {
 };
 exports.IntegrationsModule = IntegrationsModule;
 exports.IntegrationsModule = IntegrationsModule = __decorate([
     (0, common_1.Module)({
-        imports: [prisma_module_1.PrismaModule],
+        imports: [prisma_module_1.PrismaModule, leads_module_1.LeadsModule,],
         providers: [integrations_service_1.IntegrationsService, auto_assign_service_1.AutoAssignService],
         controllers: [integrations_controller_1.IntegrationsController, hook_controller_1.HookController],
         exports: [integrations_service_1.IntegrationsService, auto_assign_service_1.AutoAssignService],
