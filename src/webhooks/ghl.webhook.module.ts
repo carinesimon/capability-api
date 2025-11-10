@@ -6,4 +6,5 @@ import { GhlWebhookService } from './ghl.webhook.service';
   controllers: [GhlWebhookController],
   providers: [GhlWebhookService],
 })
+  
 export class GhlWebhookModule {}
