@@ -28,6 +28,7 @@ export class PdfExportController {
       res.setHeader('Content-Disposition', 'attachment; filename="setters_report.pdf"');
       res.setHeader('X-Archived-Path', filepath);
       return res.send(pdf);
+      
     }
 
     const pdf = await this.service.exportSettersPdf(from, to);
