@@ -6,4 +6,5 @@ export class GhlLeadDto {
   @IsEmail() email: string;
   @IsOptional() @IsString() tag?: string;
   // tu pourras ajouter phone, source, etc.
+  
 }
