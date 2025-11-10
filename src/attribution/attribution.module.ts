@@ -7,4 +7,5 @@ import { AttributionController } from './attribution.controller';
   controllers: [AttributionController],
   exports: [AttributionService],
 })
+  
 export class AttributionModule {}
