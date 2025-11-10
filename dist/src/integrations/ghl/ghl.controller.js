@@ -21,10 +21,19 @@ let GhlController = class GhlController {
         this.ghl = ghl;
     }
     async webhook(body) {
-        const eventId = body?.eventId ?? body?.payload?.eventId ?? body?.payload?.id;
-        const type = (body?.type || body?.payload?.type || '').toString().toLowerCase();
         const payload = body?.payload || body;
-        await this.ghl.deduplicate(eventId);
+        const rawType = (body?.type || payload?.type || '').toString();
+        const type = rawType.toLowerCase();
+        const eventId = body?.eventId ??
+            payload?.eventId ??
+            payload?.id ??
+            payload?.appointmentId ??
+            payload?.opportunityId ??
+            undefined;
+        const fresh = await this.ghl.deduplicate(eventId);
+        if (!fresh) {
+            return { ok: true, handled: 'duplicate' };
+        }
         if (type.startsWith('contact')) {
             await this.ghl.upsertContact({
                 firstName: payload?.firstName ?? payload?.contact?.firstName,
@@ -42,20 +51,25 @@ let GhlController = class GhlController {
                 contactEmail: payload?.contactEmail ?? payload?.email ?? payload?.contact?.email,
                 ghlContactId: payload?.contactId ?? payload?.ghlContactId ?? payload?.contact?.id,
                 amount: payload?.amount ?? payload?.opportunityValue,
-                stage: payload?.stage ?? payload?.pipelineStage,
-                saleValue: payload?.saleValue,
+                stage: payload?.stage ??
+                    payload?.pipelineStage ??
+                    payload?.stage_name ??
+                    payload?.opportunity?.stage_name,
+                saleValue: payload?.saleValue ?? payload?.opportunity?.monetary_value,
+                eventId,
             });
             return { ok: true, handled: 'opportunity' };
         }
         if (type.includes('appointment')) {
             await this.ghl.upsertAppointment({
-                id: payload?.id ?? payload?.eventId,
-                type: payload?.type,
+                id: payload?.id ?? payload?.eventId ?? payload?.appointmentId,
+                type: payload?.type ?? payload?.appointmentType,
                 status: payload?.status,
                 startTime: payload?.scheduledAt ?? payload?.startTime,
                 contactEmail: payload?.leadEmail ?? payload?.contact?.email,
                 ghlContactId: payload?.contactId ?? payload?.ghlContactId ?? payload?.contact?.id,
                 ownerEmail: payload?.ownerEmail ?? payload?.user?.email,
+                eventId,
             });
             return { ok: true, handled: 'appointment' };
         }

@@ -18,33 +18,20 @@ let StageEventsService = class StageEventsService {
         this.prisma = prisma;
     }
     async recordStageEntry(opts) {
-        const { leadId, fromStage = null, toStage, source, externalId, occurredAt } = opts;
+        const { leadId, fromStage = null, toStage, source, externalId, occurredAt, } = opts;
         const when = occurredAt ?? new Date();
-        const minuteStart = new Date(when);
-        minuteStart.setSeconds(0, 0);
-        const minuteEnd = new Date(minuteStart);
-        minuteEnd.setSeconds(59, 999);
-        const existing = await this.prisma.leadEvent.findFirst({
-            where: {
+        const dedupHash = `${leadId}|${toStage}`;
+        return this.prisma.stageEvent.upsert({
+            where: { dedupHash },
+            update: {},
+            create: {
                 leadId,
-                type: toStage,
-                occurredAt: { gte: minuteStart, lte: minuteEnd },
-            },
-            select: { id: true },
-        });
-        if (existing)
-            return null;
-        return this.prisma.leadEvent.create({
-            data: {
-                leadId,
-                type: toStage,
+                fromStage,
+                toStage,
                 occurredAt: when,
-                meta: {
-                    fromStage,
-                    toStage,
-                    source: source ?? null,
-                    externalId: externalId ?? null,
-                },
+                source: source ?? null,
+                externalId: externalId ?? null,
+                dedupHash,
             },
         });
     }

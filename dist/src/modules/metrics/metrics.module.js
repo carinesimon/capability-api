@@ -10,14 +10,15 @@ exports.MetricsModule = void 0;
 const common_1 = require("@nestjs/common");
 const metrics_controller_1 = require("./metrics.controller");
 const metrics_service_1 = require("./metrics.service");
-const prisma_service_1 = require("../../prisma/prisma.service");
+const prisma_module_1 = require("../../prisma/prisma.module");
 let MetricsModule = class MetricsModule {
 };
 exports.MetricsModule = MetricsModule;
 exports.MetricsModule = MetricsModule = __decorate([
     (0, common_1.Module)({
+        imports: [prisma_module_1.PrismaModule],
         controllers: [metrics_controller_1.MetricsController],
-        providers: [metrics_service_1.MetricsService, prisma_service_1.PrismaService],
+        providers: [metrics_service_1.MetricsService],
         exports: [metrics_service_1.MetricsService],
     })
 ], MetricsModule);

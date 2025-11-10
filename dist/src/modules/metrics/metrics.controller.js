@@ -15,27 +15,73 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.MetricsController = void 0;
 const common_1 = require("@nestjs/common");
 const metrics_service_1 = require("./metrics.service");
+function parseDateOrThrow(label, value) {
+    if (!value) {
+        throw new common_1.BadRequestException(`Query param "${label}" est requis (YYYY-MM-DD)`);
+    }
+    const d = new Date(value);
+    if (isNaN(d.getTime())) {
+        throw new common_1.BadRequestException(`Query param "${label}" invalide : "${value}"`);
+    }
+    return d;
+}
 let MetricsController = class MetricsController {
     metrics;
     constructor(metrics) {
         this.metrics = metrics;
     }
-    async getFunnel(start, end) {
-        const s = new Date(start);
-        const e = new Date(end);
-        const totals = await this.metrics.funnelTotals({ start: s, end: e });
-        return { totals };
+    async getFunnel(from, to) {
+        const start = parseDateOrThrow('from', from);
+        const endDate = parseDateOrThrow('to', to);
+        const endExclusive = new Date(endDate);
+        endExclusive.setDate(endExclusive.getDate() + 1);
+        return this.metrics.funnelTotals({ start, end: endExclusive });
+    }
+    async getLeadsByDay(from, to) {
+        const start = parseDateOrThrow('from', from);
+        const endDate = parseDateOrThrow('to', to);
+        const endExclusive = new Date(endDate);
+        endExclusive.setDate(endExclusive.getDate() + 1);
+        return this.metrics.leadsByDay({ start, end: endExclusive });
+    }
+    async getStageSeries(stageStr, from, to) {
+        if (!stageStr) {
+            throw new common_1.BadRequestException('Query param "stage" est requis');
+        }
+        const start = parseDateOrThrow('from', from);
+        const endDate = parseDateOrThrow('to', to);
+        const endExclusive = new Date(endDate);
+        endExclusive.setDate(endExclusive.getDate() + 1);
+        const stage = stageStr;
+        return this.metrics.stageSeriesByDay({ start, end: endExclusive, stage });
     }
 };
 exports.MetricsController = MetricsController;
 __decorate([
     (0, common_1.Get)('funnel'),
-    __param(0, (0, common_1.Query)('start')),
-    __param(1, (0, common_1.Query)('end')),
+    __param(0, (0, common_1.Query)('from')),
+    __param(1, (0, common_1.Query)('to')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", Promise)
 ], MetricsController.prototype, "getFunnel", null);
+__decorate([
+    (0, common_1.Get)('leads-by-day'),
+    __param(0, (0, common_1.Query)('from')),
+    __param(1, (0, common_1.Query)('to')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", Promise)
+], MetricsController.prototype, "getLeadsByDay", null);
+__decorate([
+    (0, common_1.Get)('stage-series'),
+    __param(0, (0, common_1.Query)('stage')),
+    __param(1, (0, common_1.Query)('from')),
+    __param(2, (0, common_1.Query)('to')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:returntype", Promise)
+], MetricsController.prototype, "getStageSeries", null);
 exports.MetricsController = MetricsController = __decorate([
     (0, common_1.Controller)('metrics'),
     __metadata("design:paramtypes", [metrics_service_1.MetricsService])

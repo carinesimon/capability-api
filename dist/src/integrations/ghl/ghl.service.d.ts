@@ -1,6 +1,5 @@
 import { PrismaService } from '../../prisma/prisma.service';
 import { StageEventsService } from '../../modules/leads/stage-events.service';
-
 type InboxItem = {
     id: string;
     receivedAt: string;
@@ -15,7 +14,7 @@ export declare class GhlService {
     private prisma;
     private readonly stageEvents;
     constructor(prisma: PrismaService, stageEvents: StageEventsService);
-    deduplicate(eventId?: string): Promise<void>;
+    deduplicate(eventId?: string): Promise<boolean>;
     upsertContact(args: {
         firstName?: string;
         lastName?: string | null;
@@ -31,6 +30,7 @@ export declare class GhlService {
         amount?: number | null;
         stage?: string | null;
         saleValue?: number | null;
+        eventId?: string | null;
     }): Promise<{
         id: string;
         email: string | null;
@@ -39,10 +39,10 @@ export declare class GhlService {
         createdAt: Date;
         updatedAt: Date;
         stage: import("@prisma/client").$Enums.LeadStage;
-        source: string | null;
         ghlContactId: string | null;
         phone: string | null;
         tag: string | null;
+        source: string | null;
         stageUpdatedAt: Date;
         stageId: string | null;
         boardColumnKey: string | null;
@@ -59,6 +59,7 @@ export declare class GhlService {
         contactEmail?: string | null;
         ghlContactId?: string | null;
         ownerEmail?: string | null;
+        eventId?: string | null;
     }): Promise<any>;
     captureInbox(args: {
         raw: string;
@@ -77,5 +78,7 @@ export declare class GhlService {
         lead: any;
     }>;
     private upsertLead;
+    private findLeadByEmailOrGhlId;
+    private safeRecordStageEntry;
 }
 export {};

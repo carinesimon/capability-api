@@ -7,15 +7,17 @@ export declare class StageEventsService {
         leadId: string;
         fromStage?: LeadStage | null;
         toStage: LeadStage;
-        source?: string;
+        source?: string | null;
         externalId?: string | null;
         occurredAt?: Date;
     }): Promise<{
         id: string;
-        createdAt: Date;
+        source: string | null;
         leadId: string;
+        externalId: string | null;
         occurredAt: Date;
-        type: string;
-        meta: import("@prisma/client/runtime/library").JsonValue | null;
-    } | null>;
+        fromStage: import("@prisma/client").$Enums.LeadStage | null;
+        toStage: import("@prisma/client").$Enums.LeadStage;
+        dedupHash: string | null;
+    }>;
 }

@@ -12,22 +12,94 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.MetricsService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../prisma/prisma.service");
+const client_1 = require("@prisma/client");
 let MetricsService = class MetricsService {
     prisma;
     constructor(prisma) {
         this.prisma = prisma;
     }
     async funnelTotals(params) {
-        const { start, end, stages } = params;
-        const rows = await this.prisma.leadEvent.groupBy({
-            by: ['type'],
+        const { start, end } = params;
+        const leadsReceived = await this.prisma.lead.count({
             where: {
-                occurredAt: { gte: start, lt: end },
-                ...(stages ? { type: { in: stages } } : {}),
+                createdAt: {
+                    gte: start,
+                    lt: end,
+                },
             },
-            _count: { _all: true },
         });
-        return Object.fromEntries(rows.map((r) => [r.type, r._count._all]));
+        const rows = await this.prisma.stageEvent.groupBy({
+            by: ['toStage'],
+            where: {
+                occurredAt: {
+                    gte: start,
+                    lt: end,
+                },
+            },
+            _count: {
+                _all: true,
+            },
+        });
+        const out = {};
+        for (const s of Object.values(client_1.LeadStage)) {
+            out[s] = 0;
+        }
+        for (const row of rows) {
+            out[row.toStage] = row._count._all;
+        }
+        out.LEADS_RECEIVED = leadsReceived;
+        return out;
+    }
+    async leadsByDay(params) {
+        const { start, end } = params;
+        const rows = await this.prisma.lead.findMany({
+            where: {
+                createdAt: {
+                    gte: start,
+                    lt: end,
+                },
+            },
+            select: { createdAt: true },
+        });
+        const buckets = new Map();
+        for (const r of rows) {
+            const d = r.createdAt;
+            const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            buckets.set(day, (buckets.get(day) ?? 0) + 1);
+        }
+        const byDay = Array.from(buckets.entries())
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([day, count]) => ({ day, count }));
+        return {
+            total: rows.length,
+            byDay,
+        };
+    }
+    async stageSeriesByDay(params) {
+        const { start, end, stage } = params;
+        const events = await this.prisma.stageEvent.findMany({
+            where: {
+                toStage: stage,
+                occurredAt: {
+                    gte: start,
+                    lt: end,
+                },
+            },
+            select: { occurredAt: true },
+        });
+        const buckets = new Map();
+        for (const ev of events) {
+            const d = ev.occurredAt;
+            const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            buckets.set(day, (buckets.get(day) ?? 0) + 1);
+        }
+        const byDay = Array.from(buckets.entries())
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([day, count]) => ({ day, count }));
+        return {
+            total: events.length,
+            byDay,
+        };
     }
 };
 exports.MetricsService = MetricsService;

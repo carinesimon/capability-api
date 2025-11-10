@@ -12,7 +12,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.LeadsService = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_service_1 = require("../../prisma/prisma.service");
-const client_1 = require("@prisma/client");
 const stage_events_service_1 = require("./stage-events.service");
 let LeadsService = class LeadsService {
     prisma;
@@ -49,11 +48,6 @@ let LeadsService = class LeadsService {
         const lead = await this.prisma.lead.findUnique({ where: { id: leadId } });
         if (!lead)
             throw new common_1.NotFoundException('Lead not found');
-        const normalized = columnKey.toUpperCase();
-        const asStage = Object.values(client_1.LeadStage).find(s => s === normalized);
-        if (asStage) {
-            return this.updateLeadStage(leadId, asStage, 'ui:board-dnd');
-        }
         await this.prisma.lead.update({
             where: { id: leadId },
             data: { boardColumnKey: columnKey, stageUpdatedAt: new Date() },
