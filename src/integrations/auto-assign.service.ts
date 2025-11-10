@@ -238,4 +238,5 @@ const patch: Prisma.LeadUpdateInput = {};
 
     return result;
   }
+  
 }
