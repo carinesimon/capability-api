@@ -12,6 +12,7 @@ export class LeadsController {
     @Body() body: { toStage: LeadStage; source?: string; externalId?: string },
   ) {
     return this.leads.updateLeadStage(id, body.toStage, body.source, body.externalId);
+    
   }
 
   @Post(':id/board')
@@ -21,5 +22,4 @@ export class LeadsController {
   ) {
     return this.leads.moveToBoardColumn(id, body.columnKey);
   }
-  
 }
