@@ -1120,5 +1120,4 @@ export class ProspectsService {
 
     return { ok: true };
   }
-
 }
