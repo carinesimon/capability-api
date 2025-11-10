@@ -24,4 +24,6 @@ export class AdminUpdateUserDto {
   @IsOptional() @IsEnum(['ADMIN','SETTER','CLOSER'] as any) role?: 'ADMIN'|'SETTER'|'CLOSER';
   @IsOptional() @IsBoolean() isActive?: boolean;
   @IsOptional() @IsString() tempPassword?: string;
+  
 }
+
