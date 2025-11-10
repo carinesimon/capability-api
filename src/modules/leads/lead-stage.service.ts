@@ -57,6 +57,7 @@ export class LeadStageService {
         .update(`${leadId}|${toStage}|${minuteBucket.toISOString()}`)
         .digest('hex');
       eventId = `stage-enter:${hash}`;
+      
     }
 
     // Upsert LeadEvent (type='STAGE_ENTER'); meta JSON simple et exploitable
@@ -144,3 +145,4 @@ export class LeadStageService {
   }
   
 }
+
