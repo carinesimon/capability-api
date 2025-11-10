@@ -63,4 +63,5 @@ export function normalizeStage(input?: string): StageDto | undefined {
     WON: StageDto.WON, LOST: StageDto.LOST, NOT_QUALIFIED: StageDto.NOT_QUALIFIED,
   };
   return map[k];
+  
 }
