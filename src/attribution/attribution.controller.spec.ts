@@ -15,4 +15,5 @@ describe('AttributionController', () => {
   it('should be defined', () => {
     expect(controller).toBeDefined();
   });
+  
 });
