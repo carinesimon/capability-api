@@ -6,44 +6,48 @@ import { LeadStage } from '@prisma/client';
 export class StageEventsService {
   constructor(private prisma: PrismaService) {}
 
+  /**
+   * Enregistre le 1er passage d’un lead dans un stage donné.
+   *
+   * - Un lead ne peut avoir QU’UN SEUL StageEvent par (leadId, toStage)
+   *   → grâce à dedupHash @unique.
+   * - Si on rappelle la méthode pour le même (leadId, toStage), on ne
+   *   modifie rien : on garde la date du premier passage.
+   */
   async recordStageEntry(opts: {
     leadId: string;
     fromStage?: LeadStage | null;
     toStage: LeadStage;
-    source?: string;
+    source?: string | null;
     externalId?: string | null;
     occurredAt?: Date;
   }) {
-    const { leadId, fromStage = null, toStage, source, externalId, occurredAt } = opts;
+    const {
+      leadId,
+      fromStage = null,
+      toStage,
+      source,
+      externalId,
+      occurredAt,
+    } = opts;
 
     const when = occurredAt ?? new Date();
-    const minuteStart = new Date(when); minuteStart.setSeconds(0, 0);
-    const minuteEnd = new Date(minuteStart); minuteEnd.setSeconds(59, 999);
 
-    const existing = await this.prisma.leadEvent.findFirst({
-      where: {
-        leadId,
-        type: toStage,
-        occurredAt: { gte: minuteStart, lte: minuteEnd },
-      },
-      select: { id: true },
-    });
-    if (existing) return null;
+    // 1 event max par (lead, stage) → dedupHash unique
+    const dedupHash = `${leadId}|${toStage}`;
 
-    return this.prisma.leadEvent.create({
-      data: {
+    return this.prisma.stageEvent.upsert({
+      where: { dedupHash },
+      update: {}, // ne rien changer : on garde le 1er event
+      create: {
         leadId,
-        type: toStage,
+        fromStage,
+        toStage,
         occurredAt: when,
-        meta: {
-          fromStage,
-          toStage,
-          source: source ?? null,
-          externalId: externalId ?? null,
-        },
+        source: source ?? null,
+        externalId: externalId ?? null,
+        dedupHash,
       },
     });
-    
   }
 }
-

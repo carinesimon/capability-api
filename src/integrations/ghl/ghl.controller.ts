@@ -4,7 +4,7 @@ import { GhlService } from './ghl.service';
 
 type GhlWebhookBody = {
   eventId?: string;
-  type?: string; // 'contact.created' | 'appointment.created' | 'opportunity.updated' ...
+  type?: string; // e.g. 'contact.created' | 'appointment.created' | 'opportunity.updated' ...
   payload?: any;
 };
 
@@ -14,18 +14,30 @@ export class GhlController {
 
   /**
    * Endpoint unique pour les webhooks GHL.
-   * On déduplique par eventId, puis on route selon "type".
+   * Idempotent (déduplication via eventId) + routage simple vers le service.
    */
   @Post('webhook')
   @HttpCode(200)
   async webhook(@Body() body: GhlWebhookBody) {
-    const eventId = body?.eventId ?? body?.payload?.eventId ?? body?.payload?.id;
-    const type = (body?.type || body?.payload?.type || '').toString().toLowerCase();
+    // 1) Normalisation des champs usuels
     const payload = body?.payload || body;
+    const rawType = (body?.type || payload?.type || '').toString();
+    const type = rawType.toLowerCase();
+    const eventId =
+      body?.eventId ??
+      payload?.eventId ??
+      payload?.id ?? // certains events
+      payload?.appointmentId ??
+      payload?.opportunityId ??
+      undefined;
 
-    // idempotence
-    await this.ghl.deduplicate(eventId);
+    // 2) Idempotence : si déjà traité on ignore
+    const fresh = await this.ghl.deduplicate(eventId);
+    if (!fresh) {
+      return { ok: true, handled: 'duplicate' };
+    }
 
+    // 3) Contact events
     if (type.startsWith('contact')) {
       await this.ghl.upsertContact({
         firstName: payload?.firstName ?? payload?.contact?.firstName,
@@ -39,31 +51,39 @@ export class GhlController {
       return { ok: true, handled: 'contact' };
     }
 
+    // 4) Opportunity / deal events
     if (type.includes('opportunity')) {
       await this.ghl.upsertOpportunity({
         contactEmail: payload?.contactEmail ?? payload?.email ?? payload?.contact?.email,
         ghlContactId: payload?.contactId ?? payload?.ghlContactId ?? payload?.contact?.id,
         amount: payload?.amount ?? payload?.opportunityValue,
-        stage: payload?.stage ?? payload?.pipelineStage,
-        saleValue: payload?.saleValue,
+        stage:
+          payload?.stage ??
+          payload?.pipelineStage ??
+          payload?.stage_name ??
+          payload?.opportunity?.stage_name,
+        saleValue: payload?.saleValue ?? payload?.opportunity?.monetary_value,
+        eventId,
       });
       return { ok: true, handled: 'opportunity' };
     }
 
+    // 5) Appointment / calendar events
     if (type.includes('appointment')) {
       await this.ghl.upsertAppointment({
-        id: payload?.id ?? payload?.eventId,
-        type: payload?.type,
-        status: payload?.status,
-        startTime: payload?.scheduledAt ?? payload?.startTime,
+        id: payload?.id ?? payload?.eventId ?? payload?.appointmentId,
+        type: payload?.type ?? payload?.appointmentType,       // RV0 | RV1 | RV2
+        status: payload?.status,                               // SCHEDULED | HONORED | NO_SHOW | ...
+        startTime: payload?.scheduledAt ?? payload?.startTime, // ISO
         contactEmail: payload?.leadEmail ?? payload?.contact?.email,
         ghlContactId: payload?.contactId ?? payload?.ghlContactId ?? payload?.contact?.id,
         ownerEmail: payload?.ownerEmail ?? payload?.user?.email,
+        eventId,
       });
       return { ok: true, handled: 'appointment' };
     }
 
-    // fallback: on tente un best-effort (souvent GHL envoie des payloads sans "type" propre)
+    // 6) Fallback best-effort (GHL envoie parfois des payloads sans type)
     if (payload?.contact || payload?.email) {
       await this.ghl.upsertContact({
         firstName: payload?.firstName ?? payload?.contact?.firstName,
@@ -77,6 +97,7 @@ export class GhlController {
       return { ok: true, handled: 'contact-fallback' };
     }
 
+    // 7) Rien de pertinent
     return { ok: true, handled: 'ignored' };
   }
 }

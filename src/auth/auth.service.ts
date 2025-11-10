@@ -71,7 +71,5 @@ export class AuthService {
       },
       select: { id: true, email: true, role: true, firstName: true, lastName: true },
     });
-    
   }
 }
-

@@ -1,3 +1,4 @@
+// src/integrations/ghl/ghl.service.ts
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as fs from 'fs';
@@ -5,7 +6,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import * as qs from 'querystring';
 import { LeadStage } from '@prisma/client';
-import { StageEventsService } from '../../modules/leads/stage-events.service'; // 👈 AJOUT
+import { StageEventsService } from '../../modules/leads/stage-events.service';
 
 type InboxItem = {
   id: string;
@@ -50,35 +51,156 @@ function getByPath(obj: any, p?: string): any {
   return p.split('.').reduce((acc, key) => (acc ? acc[key] : undefined), obj);
 }
 
+/* ------------------------------------------------------------------
+   Normalisation & mapping STAGES (FR/EN/typos) → clé canonique
+-------------------------------------------------------------------*/
+function normalizeKey(input?: string): string {
+  if (!input) return '';
+  return input
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .trim()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+// Variantes → clé canonique
+const STAGE_ALIASES: Record<string, LeadStage | string> = {
+  LEAD_RECU: 'LEADS_RECEIVED',
+  LEAD_REÇU: 'LEADS_RECEIVED',
+  LEADS_RECEIVED: 'LEADS_RECEIVED',
+
+  DEMANDE_APPEL: 'CALL_REQUESTED',
+  CALL_REQUESTED: 'CALL_REQUESTED',
+  APPEL_PASSE: 'CALL_ATTEMPT',
+  CALL_ATTEMPT: 'CALL_ATTEMPT',
+  APPEL_REPONDU: 'CALL_ANSWERED',
+  CALL_ANSWERED: 'CALL_ANSWERED',
+  NO_SHOW_SETTER: 'SETTER_NO_SHOW',
+  SETTER_NO_SHOW: 'SETTER_NO_SHOW',
+
+  RV0_PLANIFIE: 'RV0_PLANNED',
+  RV0_PLANIFIÉ: 'RV0_PLANNED',
+  RV0_PLANNED: 'RV0_PLANNED',
+  RV0_HONORE: 'RV0_HONORED',
+  RV0_HONORÉ: 'RV0_HONORED',
+  RV0_HONORED: 'RV0_HONORED',
+  RV0_NO_SHOW: 'RV0_NO_SHOW',
+
+  RV1_PLANIFIE: 'RV1_PLANNED',
+  RV1_PLANIFIÉ: 'RV1_PLANNED',
+  RV1_PLANNED: 'RV1_PLANNED',
+  RV1_HONORE: 'RV1_HONORED',
+  RV1_HONORÉ: 'RV1_HONORED',
+  RV1_HONORED: 'RV1_HONORED',
+  RV1_NO_SHOW: 'RV1_NO_SHOW',
+
+  RV2_PLANIFIE: 'RV2_PLANNED',
+  RV2_PLANIFIÉ: 'RV2_PLANNED',
+  RV2_PLANNED: 'RV2_PLANNED',
+  RV2_HONORE: 'RV2_HONORED',
+  RV2_HONORÉ: 'RV2_HONORED',
+  RV2_HONORED: 'RV2_HONORED',
+  RV2_POSTPONED: 'RV2_POSTPONED',
+
+  NON_QUALIFIE: 'NOT_QUALIFIED',
+  NON_QUALIFIÉ: 'NOT_QUALIFIED',
+  NOT_QUALIFIED: 'NOT_QUALIFIED',
+  PERDU: 'LOST',
+  LOST: 'LOST',
+  WON: 'WON',
+};
+
+function resolveStageKey(input?: string | LeadStage): LeadStage | string | undefined {
+  if (!input) return undefined;
+  if (Object.values(LeadStage).includes(input as LeadStage)) return input as LeadStage;
+  const norm = normalizeKey(String(input));
+  const mapped = STAGE_ALIASES[norm] || norm;
+  if (Object.values(LeadStage).includes(mapped as LeadStage)) return mapped as LeadStage;
+  return mapped; // slug non-enum éventuellement
+}
+
+// Compat avec ton ancienne fonction pour ne pas casser le reste
 function mapStageNameToLeadStage(name?: string): LeadStage | undefined {
-  if (!name) return undefined;
-  const n = name.toLowerCase().trim();
-  if (['prospect', 'prospects', 'nouveau', 'new'].some(x => n.includes(x))) return 'LEADS_RECEIVED';
-  if (n.includes('rv0')) return 'RV0_PLANNED';
-  if (n.includes('rv1')) return 'RV1_PLANNED';
-  if (n.includes('rv2') || n.includes('follow')) return 'RV2_PLANNED';
-  if (n.includes('won') || n.includes('gagn')) return 'WON';
-  if (n.includes('lost') || n.includes('perdu')) return 'LOST';
-  if (n.includes('not') && n.includes('qual')) return 'NOT_QUALIFIED';
-  return undefined;
+  const key = resolveStageKey(name);
+  return Object.values(LeadStage).includes(key as LeadStage) ? (key as LeadStage) : undefined;
+}
+
+function mapAppointmentToStage(type?: string | null, status?: string | null): LeadStage | null {
+  const t = normalizeKey(type || '');
+  const s = normalizeKey(status || '');
+
+  // planned
+  if (s === 'SCHEDULED' || s === 'PLANNED' || s === 'BOOKED' || s === '') {
+    if (t === 'RV2') return 'RV2_PLANNED';
+    if (t === 'RV1') return 'RV1_PLANNED';
+    if (t === 'RV0') return 'RV0_PLANNED';
+  }
+  // honored / show
+  if (s === 'SHOW' || s === 'HONORED' || s === 'COMPLETED' || s === 'DONE') {
+    if (t === 'RV2') return 'RV2_HONORED';
+    if (t === 'RV1') return 'RV1_HONORED';
+    if (t === 'RV0') return 'RV0_HONORED';
+  }
+  // no-show
+  if (s === 'NO_SHOW' || s === 'NOSHOW') {
+    if (t === 'RV1') return 'RV1_NO_SHOW';
+    if (t === 'RV0') return 'RV0_NO_SHOW';
+    // si tu crées RV2_NO_SHOW plus tard, mape-le ici
+  }
+  // reporté
+  if (s === 'RESCHEDULED' || s === 'POSTPONED') {
+    if (t === 'RV2') return 'RV2_POSTPONED';
+    if (t === 'RV1') return 'RV1_PLANNED'; // on redevient “planifié”
+    if (t === 'RV0') return 'RV0_PLANNED';
+  }
+  // canceled → pas de stage
+  if (s === 'CANCELED' || s === 'CANCELLED') return null;
+
+  // fallback: si seul le type est connu
+  if (t === 'RV2') return 'RV2_PLANNED';
+  if (t === 'RV1') return 'RV1_PLANNED';
+  if (t === 'RV0') return 'RV0_PLANNED';
+  return null;
 }
 
 @Injectable()
 export class GhlService {
   constructor(
     private prisma: PrismaService,
-    private readonly stageEvents: StageEventsService, // 👈 AJOUT
+    private readonly stageEvents: StageEventsService,
   ) {}
 
-  async deduplicate(eventId?: string) {
-    if (!eventId) return;
-    await this.prisma.webhookEvent.upsert({
-      where: { externalId: eventId },
-      update: { status: 'RECEIVED', receivedAt: new Date(), type: 'ghl', payloadHash: eventId },
-      create: { externalId: eventId, status: 'RECEIVED', receivedAt: new Date(), type: 'ghl', payloadHash: eventId },
-    });
+  /**
+   * Déduplication idempotente.
+   * Retourne true si fresh, false si duplicate.
+   * Requiert une contrainte unique sur webhookEvent.externalId (recommandé).
+   */
+  async deduplicate(eventId?: string): Promise<boolean> {
+    if (!eventId) return true;
+    try {
+      await this.prisma.webhookEvent.create({
+        data: {
+          externalId: eventId,
+          status: 'RECEIVED',
+          type: 'ghl',
+          payloadHash: eventId,
+          receivedAt: new Date(),
+        } as any,
+      });
+      return true; // fresh
+    } catch {
+      // existe déjà → duplicate
+      await this.prisma.webhookEvent.updateMany({
+        where: { externalId: eventId },
+        data: { status: 'RECEIVED', receivedAt: new Date() },
+      });
+      return false;
+    }
   }
 
+  /* ==================== CONTACT ==================== */
   async upsertContact(args: {
     firstName?: string;
     lastName?: string | null;
@@ -99,25 +221,23 @@ export class GhlService {
     });
   }
 
-  // ⬇️⬇️⬇️ ICI : on enregistre AUSSI le stage dans leadEvent
+  /* ==================== OPPORTUNITY ==================== */
   async upsertOpportunity(args: {
     contactEmail?: string | null;
     ghlContactId?: string | null;
     amount?: number | null;
     stage?: string | null;
     saleValue?: number | null;
+    eventId?: string | null; // pour idempotence StageEvents
   }) {
-    const lead =
-      (args.ghlContactId
-        ? await this.prisma.lead.findFirst({ where: { ghlContactId: args.ghlContactId } })
-        : null) ||
-      (args.contactEmail
-        ? await this.prisma.lead.findFirst({ where: { email: (args.contactEmail || '').toLowerCase() } })
-        : null);
+    const lead = await this.findLeadByEmailOrGhlId(
+      (args.contactEmail || '').toLowerCase() || null,
+      args.ghlContactId || null,
+    );
 
-    const mapped = mapStageNameToLeadStage(args.stage || undefined);
+    const mapped = resolveStageKey(args.stage || undefined);
 
-    // pas de lead → on crée
+    // Pas de lead → on crée minimal et applique le stage si fourni
     if (!lead) {
       const created = await this.prisma.lead.create({
         data: {
@@ -126,40 +246,40 @@ export class GhlService {
           email: args.contactEmail?.toLowerCase() || null,
           source: 'GHL',
           ghlContactId: args.ghlContactId ?? null,
-          ...(mapped ? { stage: mapped, stageUpdatedAt: new Date() } : {}),
+          ...(mapped && Object.values(LeadStage).includes(mapped as LeadStage)
+            ? { stage: mapped as LeadStage, stageUpdatedAt: new Date() }
+            : {}),
           ...(mapped === 'WON' && args.saleValue != null ? { saleValue: args.saleValue! } : {}),
         },
       });
 
-      // si GHL nous a envoyé un stage → on crée aussi l’event
       if (mapped) {
-        await this.stageEvents.recordStageEntry({
+        await this.safeRecordStageEntry({
           leadId: created.id,
+          toStage: mapped as any,
           fromStage: 'LEADS_RECEIVED',
-          toStage: mapped,
           source: 'webhook:ghl:opportunity',
-          externalId: args.ghlContactId ?? args.contactEmail ?? undefined,
+          externalId: args.eventId ?? args.ghlContactId ?? args.contactEmail ?? undefined,
         });
       }
-
       return created;
     }
 
-    // lead existe → on met à jour
+    // Lead existe → maj + event
     const update: any = {};
     if (mapped) {
-      update.stage = mapped;
-      update.stageUpdatedAt = new Date();
-      if (mapped === 'WON' && args.saleValue != null) update.saleValue = args.saleValue!;
-
-      // 👇 c’est ÇA qui manquait pour tes stats
-      await this.stageEvents.recordStageEntry({
-        leadId: lead.id,
-        fromStage: lead.stage ?? 'LEADS_RECEIVED',
-        toStage: mapped,
-        source: 'webhook:ghl:opportunity',
-        externalId: args.ghlContactId ?? args.contactEmail ?? undefined,
-      });
+      if (Object.values(LeadStage).includes(mapped as LeadStage)) {
+        update.stage = mapped;
+        update.stageUpdatedAt = new Date();
+        if (mapped === 'WON' && args.saleValue != null) update.saleValue = args.saleValue!;
+        await this.safeRecordStageEntry({
+          leadId: lead.id,
+          fromStage: (lead.stage as any) ?? 'LEADS_RECEIVED',
+          toStage: mapped as any,
+          source: 'webhook:ghl:opportunity',
+          externalId: args.eventId ?? args.ghlContactId ?? args.contactEmail ?? undefined,
+        });
+      }
     }
     if (args.ghlContactId && !lead.ghlContactId) update.ghlContactId = args.ghlContactId;
 
@@ -167,51 +287,47 @@ export class GhlService {
     return this.prisma.lead.update({ where: { id: lead.id }, data: update });
   }
 
-  // ⬇️⬇️⬇️ ici aussi on ajoute le stage RV0/RV1/RV2 selon type/status
+  /* ==================== APPOINTMENT ==================== */
   async upsertAppointment(args: {
     id?: string | null;
-    type?: string | null;
-    status?: string | null;
+    type?: string | null;     // RV0 | RV1 | RV2 | ...
+    status?: string | null;   // SCHEDULED | HONORED | NO_SHOW | POSTPONED | CANCELED ...
     startTime?: string | null;
     contactEmail?: string | null;
     ghlContactId?: string | null;
     ownerEmail?: string | null;
+    eventId?: string | null;
   }) {
-    const lead =
-      (args.ghlContactId
-        ? await this.prisma.lead.findFirst({ where: { ghlContactId: args.ghlContactId } })
-        : null) ||
-      (args.contactEmail
-        ? await this.prisma.lead.findFirst({ where: { email: (args.contactEmail || '').toLowerCase() } })
-        : null);
-
+    const lead = await this.findLeadByEmailOrGhlId(
+      (args.contactEmail || '').toLowerCase() || null,
+      args.ghlContactId || null,
+    );
     const leadId = lead?.id ?? null;
 
-    const user =
-      args.ownerEmail
-        ? await this.prisma.user.findFirst({ where: { email: args.ownerEmail.toLowerCase() } })
-        : null;
+    const user = args.ownerEmail
+      ? await this.prisma.user.findFirst({ where: { email: args.ownerEmail.toLowerCase() } })
+      : null;
 
     try {
       const scheduledAt = args.startTime ? new Date(args.startTime) : new Date();
-      const type = (args.type || '').toUpperCase();     // RV0 / RV1 / RV2
-      const status = (args.status || '').toUpperCase(); // HONORED / NO_SHOW / ...
+      const typeNorm = normalizeKey(args.type || '');
+      const statusNorm = normalizeKey(args.status || '');
 
-      // 1) on upsert l’appointment (comme avant)
+      // 1) Upsert appointment
       const appt = args.id
         ? await (this.prisma as any).appointment.upsert({
             where: { id: args.id },
             update: {
-              type,
-              status,
+              type: typeNorm,
+              status: statusNorm,
               scheduledAt,
               ...(leadId ? { leadId } : {}),
               ...(user?.id ? { userId: user.id } : {}),
             },
             create: {
               id: args.id,
-              type,
-              status,
+              type: typeNorm,
+              status: statusNorm,
               scheduledAt,
               ...(leadId ? { leadId } : {}),
               ...(user?.id ? { userId: user.id } : {}),
@@ -219,33 +335,24 @@ export class GhlService {
           })
         : await (this.prisma as any).appointment.create({
             data: {
-              type,
-              status,
+              type: typeNorm,
+              status: statusNorm,
               scheduledAt,
               ...(leadId ? { leadId } : {}),
               ...(user?.id ? { userId: user.id } : {}),
             },
           });
 
-      // 2) si on connaît le lead ET que c’est un RV1 HONORÉ → on écrit aussi l’event
+      // 2) Stage depuis RDV (idempotent via StageEventsService + unique lead/stage)
       if (leadId) {
-        const toStage = (() => {
-          if (type === 'RV1' && status === 'HONORED') return 'RV1_HONORED';
-          if (type === 'RV1') return 'RV1_PLANNED';
-          if (type === 'RV0' && status === 'HONORED') return 'RV0_HONORED';
-          if (type === 'RV0') return 'RV0_PLANNED';
-          if (type === 'RV2' && status === 'HONORED') return 'RV2_HONORED';
-          if (type === 'RV2') return 'RV2_PLANNED';
-          return null;
-        })();
-
+        const toStage = mapAppointmentToStage(args.type, args.status);
         if (toStage) {
-          await this.stageEvents.recordStageEntry({
+          await this.safeRecordStageEntry({
             leadId,
-            fromStage: lead?.stage ?? 'LEADS_RECEIVED',
-            toStage: toStage as LeadStage,
+            fromStage: (lead?.stage as any) ?? 'LEADS_RECEIVED',
+            toStage,
             source: 'webhook:ghl:appointment',
-            externalId: args.id ?? undefined,
+            externalId: args.eventId ?? args.id ?? undefined,
           });
 
           await this.prisma.lead.update({
@@ -261,7 +368,7 @@ export class GhlService {
     }
   }
 
-  /** ------------- Inbox fichiers + auto-process ------------- */
+  /* ==================== Inbox fichiers + auto-process ==================== */
 
   async captureInbox(args: { raw: string; headers: any; query: any; contentType: string }): Promise<InboxItem> {
     ensureDir(DATA_DIR);
@@ -366,6 +473,7 @@ export class GhlService {
     return { ok: true, lead };
   }
 
+  /* ==================== Lead upsert interne ==================== */
   private async upsertLead(args: {
     ghlContactId?: string;
     firstName: string;
@@ -409,6 +517,16 @@ export class GhlService {
           ...(args.saleValue != null && stage === 'WON' ? { saleValue: args.saleValue } : {}),
         },
       });
+
+      if (stage) {
+        await this.safeRecordStageEntry({
+          leadId: lead.id,
+          fromStage: 'LEADS_RECEIVED',
+          toStage: stage,
+          source: 'webhook:ghl:lead-upsert',
+          externalId: args.ghlContactId ?? args.email ?? undefined,
+        });
+      }
     } else {
       const update: any = { ...baseData };
       if (stage) { update.stage = stage; update.stageUpdatedAt = new Date(); }
@@ -418,7 +536,52 @@ export class GhlService {
         where: { id: existing.id },
         data: update,
       });
+
+      if (stage) {
+        await this.safeRecordStageEntry({
+          leadId: lead.id,
+          fromStage: (existing.stage as any) ?? 'LEADS_RECEIVED',
+          toStage: stage,
+          source: 'webhook:ghl:lead-upsert',
+          externalId: args.ghlContactId ?? args.email ?? undefined,
+        });
+      }
     }
     return lead;
+  }
+
+  /* ==================== Utils ==================== */
+
+  private async findLeadByEmailOrGhlId(email?: string | null, ghlId?: string | null) {
+    if (email) {
+      const byEmail = await this.prisma.lead.findUnique({ where: { email } });
+      if (byEmail) return byEmail;
+    }
+    if (ghlId) {
+      const byGhl = await this.prisma.lead.findFirst({ where: { ghlContactId: ghlId } as any });
+      if (byGhl) return byGhl;
+    }
+    return null;
+  }
+
+  /** Enveloppe idempotente pour StageEventsService, pour éviter les doublons “externes”. */
+  private async safeRecordStageEntry(args: {
+    leadId: string;
+    fromStage: LeadStage | string;
+    toStage: LeadStage | string;
+    source?: string;
+    externalId?: string;
+  }) {
+    try {
+      await this.stageEvents.recordStageEntry({
+        leadId: args.leadId,
+        fromStage: args.fromStage as any,
+        toStage: args.toStage as any,
+        source: args.source ?? 'webhook:ghl',
+        externalId: args.externalId,
+      });
+    } catch {
+      // Silencieux si déjà existant (unique par (leadId, stage) gérée en aval)
+    }
   }
 }

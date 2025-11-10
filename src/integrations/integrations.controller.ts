@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestj
 import { IntegrationsService } from './integrations.service';
 import { LeadStage } from '@prisma/client';
 
+
 @Controller('integrations')
 export class IntegrationsController {
   constructor(private readonly svc: IntegrationsService) {}
@@ -16,7 +17,6 @@ export class IntegrationsController {
   getLeadStages() {
     // Renvoie les valeurs EXACTES de l’ENUM (ton schéma)
     return { stages: Object.values(LeadStage) };
-    
   }
 
   @Post('automations')

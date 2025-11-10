@@ -1,13 +1,13 @@
+// backend/src/modules/metrics/metrics.module.ts
 import { Module } from '@nestjs/common';
 import { MetricsController } from './metrics.controller';
 import { MetricsService } from './metrics.service';
-
-import { PrismaService } from '../../prisma/prisma.service'; // ← import relatif qui fonctionne sans alias
+import { PrismaModule } from '../../prisma/prisma.module';
 
 @Module({
+  imports: [PrismaModule],
   controllers: [MetricsController],
-  providers: [MetricsService, PrismaService],
+  providers: [MetricsService],
   exports: [MetricsService],
 })
 export class MetricsModule {}
-
