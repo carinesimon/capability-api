@@ -60,6 +60,7 @@ export class AdminService {
         update: { role: Role.CLOSER, isActive: true, firstName: `Closer ${i}` },
         create: { email, role: Role.CLOSER, isActive: true, firstName: `Closer ${i}` },
       });
+
       closerIds.push(u.id);
     }
 
@@ -209,3 +210,4 @@ export class AdminService {
     };
   }
 }
+
