@@ -8,4 +8,5 @@ export class CreateAppointmentDto {
   @IsString() leadId: string;
   @IsString() userId: string; // setter ou closer selon type
   @IsOptional() @IsString() notes?: string;
+  
 }
