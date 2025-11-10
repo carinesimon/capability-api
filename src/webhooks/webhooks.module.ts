@@ -8,4 +8,5 @@ import { AttributionModule } from '../attribution/attribution.module';
   controllers: [GhlController],
   providers: [WebhooksService],
 })
+  
 export class WebhooksModule {}
