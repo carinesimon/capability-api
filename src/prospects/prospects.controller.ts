@@ -1,7 +1,13 @@
 // prospects.controller.ts
 import {
-  Body, Controller, Get, Param, Patch, Post, Put, Query,
-  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
 } from '@nestjs/common';
 import { ProspectsService } from './prospects.service';
 import { LeadStage, Role } from '@prisma/client';
@@ -23,11 +29,15 @@ export class ProspectsController {
       select: { label: true, stage: true, order: true },
       orderBy: { order: 'asc' },
     });
-    return rows.map(r => ({ value: r.stage as LeadStage, label: r.label }));
+    return rows.map((r) => ({ value: r.stage as LeadStage, label: r.label }));
   }
 
   @Get('board')
-  getBoard(@Query('from') from?: string, @Query('to') to?: string, @Query('limit') limit?: string) {
+  getBoard(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('limit') limit?: string,
+  ) {
     return this.svc.getBoard({ from, to, limit: Number(limit ?? 200) });
   }
 
@@ -37,7 +47,16 @@ export class ProspectsController {
   }
 
   @Put('columns-config')
-  putColumnsConfig(@Body() payload: Array<{ id: string; label: string; order: number; enabled: boolean; stage?: LeadStage | null }>) {
+  putColumnsConfig(
+    @Body()
+    payload: Array<{
+      id: string;
+      label: string;
+      order: number;
+      enabled: boolean;
+      stage?: LeadStage | null;
+    }>,
+  ) {
     return this.svc.putColumnsConfig(payload);
   }
 
@@ -49,41 +68,75 @@ export class ProspectsController {
       select: { id: true, firstName: true, email: true, role: true },
       orderBy: [{ role: 'asc' }, { firstName: 'asc' }],
     });
-    const setters = rows.filter(r => r.role === Role.SETTER).map(r => ({ id: r.id, firstName: r.firstName, email: r.email }));
-    const closers = rows.filter(r => r.role === Role.CLOSER).map(r => ({ id: r.id, firstName: r.firstName, email: r.email }));
+    const setters = rows
+      .filter((r) => r.role === Role.SETTER)
+      .map((r) => ({ id: r.id, firstName: r.firstName, email: r.email }));
+    const closers = rows
+      .filter((r) => r.role === Role.CLOSER)
+      .map((r) => ({ id: r.id, firstName: r.firstName, email: r.email }));
     return { setters, closers };
   }
 
-  /* ===== Event (drag&drop) — ENTRÉE DE STAGE + LOG ===== */
+  /* ===== Event (drag&drop) ===== */
   @Post(':id/events')
   async addEvent(
     @Param('id') id: string,
-    @Body() body: CreateProspectEventDto,
+    @Body() dto: CreateProspectEventDto,
   ) {
-    if (!body?.type) throw new BadRequestException('type requis');
-    return this.svc.addEvent(id, body);
+    return this.svc.addEvent(id, dto);
   }
 
   /* ===== CRUD Lead ===== */
   @Post()
-  createLead(@Body() body: {
-    firstName: string; lastName?: string | null; email?: string | null; phone?: string | null;
-    tag?: string | null; source?: string | null; opportunityValue?: number | null;
-    saleValue?: number | null; stage?: LeadStage; setterId?: string | null; closerId?: string | null;
-  }) {
+  createLead(
+    @Body()
+    body: {
+      firstName: string;
+      lastName?: string | null;
+      email?: string | null;
+      phone?: string | null;
+      tag?: string | null;
+      source?: string | null;
+      opportunityValue?: number | null;
+      saleValue?: number | null;
+      stage?: LeadStage;
+      setterId?: string | null;
+      closerId?: string | null;
+    },
+  ) {
     return this.svc.createLead(body as any);
   }
 
   @Patch(':id/stage')
-  moveStage(@Param('id') id: string, @Body() body: { stage: LeadStage; saleValue?: number; confirmSame?: boolean }) {
+  moveStage(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      stage: LeadStage;
+      saleValue?: number;
+      confirmSame?: boolean;
+    },
+  ) {
     return this.svc.moveStage(id, body as any);
   }
 
   @Patch(':id')
-  updateOne(@Param('id') id: string, @Body() body: {
-    firstName?: string; lastName?: string | null; email?: string | null; phone?: string | null; tag?: string | null;
-    source?: string | null; opportunityValue?: number | null; saleValue?: number | null; setterId?: string | null; closerId?: string | null;
-  }) {
+  updateOne(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      firstName?: string;
+      lastName?: string | null;
+      email?: string | null;
+      phone?: string | null;
+      tag?: string | null;
+      source?: string | null;
+      opportunityValue?: number | null;
+      saleValue?: number | null;
+      setterId?: string | null;
+      closerId?: string | null;
+    },
+  ) {
     return this.svc.updateOne(id, body);
   }
 

@@ -1,9 +1,17 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  CreateProspectEventDto,
+  StageDto,
+  normalizeStage,
+} from './dto/create-prospect-event.dto';
+
+
 import { PrismaService } from '../prisma/prisma.service';
 import { LeadStage, Role } from '@prisma/client';
-import { ReportingService } from '../reporting/reporting.service';
-import { StageEventsService } from '../modules/leads/stage-events.service';
-import { CreateProspectEventDto, StageDto, normalizeStage } from './dto/create-prospect-event.dto';
 
 /* =========================================================
    ========  NOUVEAU : Catalogue & colonnes ops  ===========
@@ -37,32 +45,32 @@ const DEFAULT_METRICS: Array<{
   order: number;
   enabled: boolean;
 }> = [
-  { key: 'LEADS_RECEIVED', label: 'Leads reçus',              sourcePath: 'funnel.totals.leads',         order: 0,  enabled: true },
-  { key: 'CALL_REQUESTED', label: 'Demandes d’appel',         sourcePath: 'funnel.totals.callRequests',  order: 1,  enabled: true },
-  { key: 'CALL_ATTEMPT',   label: 'Appels passés',            sourcePath: 'funnel.totals.callsTotal',    order: 2,  enabled: true },
-  { key: 'CALL_ANSWERED',  label: 'Appels répondus',          sourcePath: 'funnel.totals.callsAnswered', order: 3,  enabled: true },
-  { key: 'SETTER_NO_SHOW', label: 'No-show Setter',           sourcePath: 'funnel.totals.setterNoShow',  order: 4,  enabled: true },
-  { key: 'FOLLOW_UP',      label: 'Follow Up (Financement)',  sourcePath: 'funnel.totals.followUp',      order: 5,  enabled: true },
+  { key: 'LEADS_RECEIVED', label: 'Leads reçus',             sourcePath: 'funnel.totals.leads',         order: 0,  enabled: true },
+  { key: 'CALL_REQUESTED', label: 'Demandes d’appel',        sourcePath: 'funnel.totals.callRequests',  order: 1,  enabled: true },
+  { key: 'CALL_ATTEMPT',   label: 'Appels passés',           sourcePath: 'funnel.totals.callsTotal',    order: 2,  enabled: true },
+  { key: 'CALL_ANSWERED',  label: 'Appels répondus',         sourcePath: 'funnel.totals.callsAnswered', order: 3,  enabled: true },
+  { key: 'SETTER_NO_SHOW', label: 'No-show Setter',          sourcePath: 'funnel.totals.setterNoShow',  order: 4,  enabled: true },
+  { key: 'FOLLOW_UP',      label: 'Follow Up (Financement)', sourcePath: 'funnel.totals.followUp',      order: 5,  enabled: true },
 
-  { key: 'RV0_PLANNED',    label: 'RV0 planifiés',            sourcePath: 'funnel.totals.rv0Planned',    order: 6,  enabled: true },
-  { key: 'RV0_HONORED',    label: 'RV0 honorés',              sourcePath: 'funnel.totals.rv0Honored',    order: 7,  enabled: true },
-  { key: 'RV0_NO_SHOW',    label: 'RV0 no-show',              sourcePath: 'funnel.totals.rv0NoShow',     order: 8,  enabled: true },
+  { key: 'RV0_PLANNED',    label: 'RV0 planifiés',           sourcePath: 'funnel.totals.rv0Planned',    order: 6,  enabled: true },
+  { key: 'RV0_HONORED',    label: 'RV0 honorés',             sourcePath: 'funnel.totals.rv0Honored',    order: 7,  enabled: true },
+  { key: 'RV0_NO_SHOW',    label: 'RV0 no-show',             sourcePath: 'funnel.totals.rv0NoShow',     order: 8,  enabled: true },
 
-  { key: 'RV1_PLANNED',    label: 'RV1 planifiés',            sourcePath: 'funnel.totals.rv1Planned',    order: 9,  enabled: true },
-  { key: 'RV1_HONORED',    label: 'RV1 honorés',              sourcePath: 'funnel.totals.rv1Honored',    order:10,  enabled: true },
-  { key: 'RV1_NO_SHOW',    label: 'RV1 no-show',              sourcePath: 'funnel.totals.rv1NoShow',     order:11,  enabled: true },
-  { key: 'RV1_POSTPONED',  label: 'RV1 reportés',             sourcePath: 'funnel.totals.rv1Postponed',  order:12,  enabled: true },
+  { key: 'RV1_PLANNED',    label: 'RV1 planifiés',           sourcePath: 'funnel.totals.rv1Planned',    order: 9,  enabled: true },
+  { key: 'RV1_HONORED',    label: 'RV1 honorés',             sourcePath: 'funnel.totals.rv1Honored',    order: 10, enabled: true },
+  { key: 'RV1_NO_SHOW',    label: 'RV1 no-show',             sourcePath: 'funnel.totals.rv1NoShow',     order: 11, enabled: true },
+  { key: 'RV1_POSTPONED',  label: 'RV1 reportés',            sourcePath: 'funnel.totals.rv1Postponed',  order: 12, enabled: true },
 
-  { key: 'RV2_PLANNED',    label: 'RV2 planifiés',            sourcePath: 'funnel.totals.rv2Planned',    order:13,  enabled: true },
-  { key: 'RV2_HONORED',    label: 'RV2 honorés',              sourcePath: 'funnel.totals.rv2Honored',    order:14,  enabled: true },
-  { key: 'RV2_POSTPONED',  label: 'RV2 reportés',             sourcePath: 'funnel.totals.rv2Postponed',  order:15,  enabled: true },
+  { key: 'RV2_PLANNED',    label: 'RV2 planifiés',           sourcePath: 'funnel.totals.rv2Planned',    order: 13, enabled: true },
+  { key: 'RV2_HONORED',    label: 'RV2 honorés',             sourcePath: 'funnel.totals.rv2Honored',    order: 14, enabled: true },
+  { key: 'RV2_POSTPONED',  label: 'RV2 reportés',            sourcePath: 'funnel.totals.rv2Postponed',  order: 15, enabled: true },
 
-  { key: 'NOT_QUALIFIED',  label: 'Non qualifiés',            sourcePath: 'funnel.totals.notQualified',  order:16,  enabled: true },
-  { key: 'LOST',           label: 'Perdus',                   sourcePath: 'funnel.totals.lost',          order:17,  enabled: true },
-  { key: 'WON',            label: 'Ventes (WON)',             sourcePath: 'funnel.totals.wonCount',      order:18,  enabled: true },
+  { key: 'NOT_QUALIFIED',  label: 'Non qualifiés',           sourcePath: 'funnel.totals.notQualified',  order: 16, enabled: true },
+  { key: 'LOST',           label: 'Perdus',                  sourcePath: 'funnel.totals.lost',          order: 17, enabled: true },
+  { key: 'WON',            label: 'Ventes (WON)',            sourcePath: 'funnel.totals.wonCount',      order: 18, enabled: true },
 ];
 
-// mapping LeadStage -> type d'événement à logger
+// mapping LeadStage -> type d'événement à logger (legacy leadEvent)
 const STAGE_TO_EVENT: Record<LeadStage, string> = {
   LEADS_RECEIVED: 'LEAD_CREATED',
   CALL_REQUESTED: 'CALL_REQUESTED',
@@ -70,57 +78,36 @@ const STAGE_TO_EVENT: Record<LeadStage, string> = {
   CALL_ANSWERED: 'CALL_ANSWERED',
   SETTER_NO_SHOW: 'SETTER_NO_SHOW',
   FOLLOW_UP: 'FOLLOW_UP',
-
-  RV0_PLANNED:   'APPOINTMENT_PLANNED_RV0',
-  RV0_HONORED:   'APPOINTMENT_HONORED_RV0',
-  RV0_NO_SHOW:   'APPOINTMENT_NOSHOW_RV0',
-
-  RV1_PLANNED:   'APPOINTMENT_PLANNED_RV1',
-  RV1_HONORED:   'APPOINTMENT_HONORED_RV1',
-  RV1_NO_SHOW:   'APPOINTMENT_NOSHOW_RV1',
+  RV0_PLANNED: 'APPOINTMENT_PLANNED_RV0',
+  RV0_HONORED: 'APPOINTMENT_HONORED_RV0',
+  RV0_NO_SHOW: 'APPOINTMENT_NOSHOW_RV0',
+  RV1_PLANNED: 'APPOINTMENT_PLANNED_RV1',
+  RV1_HONORED: 'APPOINTMENT_HONORED_RV1',
+  RV1_NO_SHOW: 'APPOINTMENT_NOSHOW_RV1',
   RV1_POSTPONED: 'APPOINTMENT_POSTPONED_RV1',
-
-  RV2_PLANNED:   'APPOINTMENT_PLANNED_RV2',
-  RV2_HONORED:   'APPOINTMENT_HONORED_RV2',
+  RV2_PLANNED: 'APPOINTMENT_PLANNED_RV2',
+  RV2_HONORED: 'APPOINTMENT_HONORED_RV2',
   RV2_POSTPONED: 'APPOINTMENT_POSTPONED_RV2',
-
   NOT_QUALIFIED: 'NOT_QUALIFIED',
-  LOST:          'LOST',
-  WON:           'WON',
+  LOST: 'LOST',
+  WON: 'WON',
 };
 
-// Événements cumulés via leadEvent (comptés par le reporting)
+// Événements cumulés via leadEvent (legacy) pour moveStage
 const EVENT_BASED_STAGES: LeadStage[] = [
-  // appels & suivi
   'CALL_REQUESTED',
   'CALL_ATTEMPT',
   'CALL_ANSWERED',
   'SETTER_NO_SHOW',
-  'FOLLOW_UP',
-
-  // RV0
-  'RV0_PLANNED',
-  'RV0_HONORED',
-  'RV0_NO_SHOW',
-
-  // RV1
-  'RV1_PLANNED',
-  'RV1_HONORED',
-  'RV1_NO_SHOW',
-  'RV1_POSTPONED',
-
-  // RV2
-  'RV2_PLANNED',
-  'RV2_HONORED',
-  'RV2_POSTPONED',
-
-  // sorties de pipe
   'NOT_QUALIFIED',
   'LOST',
-  'WON',
 ];
 
 type OpsColumn = { key: PipelineMetricKey; label: string; count: number };
+
+/* =========================================================
+   ====================  EXISTANT  =========================
+   ========================================================= */
 
 type BoardArgs = { from?: string; to?: string; limit?: number };
 type MoveStageBody = { stage: LeadStage; saleValue?: number; confirmSame?: boolean };
@@ -157,9 +144,6 @@ const num = (v: unknown) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
-function getByPath(obj: any, path: string): any {
-  return path.split('.').reduce((o, k) => (o ? o[k] : undefined), obj);
-}
 
 /* -------------------- Helpers UTC -------------------- */
 type RangeUTC = { from?: Date; to?: Date };
@@ -186,40 +170,18 @@ function toRange(from?: string, to?: string): RangeUTC {
 }
 
 /** Inclusif (gte/lte), en UTC */
-function between(field: 'createdAt' | 'scheduledAt' | 'stageUpdatedAt', r: RangeUTC) {
+function between(
+  field: 'createdAt' | 'scheduledAt' | 'stageUpdatedAt' | 'occurredAt',
+  r: RangeUTC,
+) {
   if (!r.from && !r.to) return {};
   return { [field]: { gte: r.from ?? undefined, lte: r.to ?? undefined } } as any;
 }
-
-/** Mapping StageDto (FR) -> LeadStage (Prisma) */
-const mapStageDtoToLeadStage = (s: StageDto): LeadStage => {
-  switch (s) {
-    case StageDto.LEAD_RECU: return 'LEADS_RECEIVED';
-    case StageDto.DEMANDE_APPEL: return 'CALL_REQUESTED';
-    case StageDto.APPEL_PASSE: return 'CALL_ATTEMPT';
-    case StageDto.APPEL_REPONDU: return 'CALL_ANSWERED';
-    case StageDto.NO_SHOW_SETTER: return 'SETTER_NO_SHOW';
-    case StageDto.RV0_PLANIFIE: return 'RV0_PLANNED';
-    case StageDto.RV0_HONORE: return 'RV0_HONORED';
-    case StageDto.RV0_NO_SHOW: return 'RV0_NO_SHOW';
-    case StageDto.RV1_PLANIFIE: return 'RV1_PLANNED';
-    case StageDto.RV1_HONORE: return 'RV1_HONORED';
-    case StageDto.RV1_NO_SHOW: return 'RV1_NO_SHOW';
-    case StageDto.RV2_PLANIFIE: return 'RV2_PLANNED';
-    case StageDto.RV2_HONORE: return 'RV2_HONORED';
-    case StageDto.WON: return 'WON';
-    case StageDto.LOST: return 'LOST';
-    case StageDto.NOT_QUALIFIED: return 'NOT_QUALIFIED';
-    default: return 'LEADS_RECEIVED';
-  }
-};
 
 @Injectable()
 export class ProspectsService {
   constructor(
     private prisma: PrismaService,
-    private reporting: ReportingService,
-    private stageEvents: StageEventsService,
   ) {}
 
   /* =========================================================
@@ -235,120 +197,141 @@ export class ProspectsService {
     };
   }
 
-  /* ---------- Déplacement dans une “colonne libre” ---------- */
- // src/prospects/prospects.service.ts
+  /**
+   * Calcule un mini-funnel interne à partir de Lead + StageEvent,
+   * pour alimenter les colonnes "ops" (LEADS_RECEIVED, CALL_REQUESTED, WON, etc.)
+   */
+  private async computePipelineMetrics(
+    from?: string,
+    to?: string,
+  ): Promise<Record<PipelineMetricKey, number>> {
+    const r = toRange(from, to);
+    const metrics: Record<PipelineMetricKey, number> = {} as any;
 
-async moveToFreeColumn(leadId: string, columnKey: string) {
-  if (!columnKey) throw new BadRequestException('columnKey requis');
+    // Init à 0
+    for (const m of DEFAULT_METRICS) {
+      metrics[m.key] = 0;
+    }
 
-  const [lead, column] = await Promise.all([
-    this.prisma.lead.findUnique({ where: { id: leadId } }),
-    this.prisma.prospectsColumnConfig.findUnique({ where: { id: columnKey } }).catch(() => null),
-  ]);
-  if (!lead) throw new NotFoundException('Lead introuvable');
-
-  const prev = (lead as any).boardColumnKey ?? null;
-
-  // journal visuel (optionnel)
-  try {
-    await (this.prisma as any).leadBoardEvent?.create?.({
-      data: { leadId, columnKey, previousKey: prev, movedAt: new Date() },
+    // 1) Leads reçus = leads créés dans la période
+    const leadsReceived = await this.prisma.lead.count({
+      where: between('createdAt', r),
     });
-  } catch {}
+    metrics.LEADS_RECEIVED = leadsReceived;
 
-  // MAJ position visuelle
-  try {
-    await this.prisma.lead.update({
-      where: { id: leadId },
-      data: { boardColumnKey: columnKey as any },
+    // 2) Entrées dans les stages = StageEvent.toStage dans la période
+    const stageWhere = between('occurredAt', r);
+    const stageRows = await this.prisma.stageEvent.groupBy({
+      by: ['toStage'],
+      where: stageWhere,
+      _count: { _all: true },
     });
-  } catch {}
 
-  // ⬇️ si la colonne est mappée à un vrai stage → on doit TOUT faire
-  if (column?.stage) {
-    const stage = column.stage as any; // LeadStage
+    for (const row of stageRows) {
+      const key = row.toStage as PipelineMetricKey;
+      if (metrics[key] != null) {
+        metrics[key] = row._count._all;
+      }
+    }
 
-    const type = STAGE_TO_EVENT[stage];
-    // 1) event cumulatif (comme avant)
+    return metrics;
+  }
+
+  async getOpsColumns(
+    from?: string,
+    to?: string,
+  ): Promise<{ ok: true; columns: OpsColumn[]; period: { from?: string; to?: string } }> {
+    let configs = await this.prisma.metricConfig.findMany({ orderBy: { order: 'asc' } });
+    if (!configs.length) {
+      await this.prisma.$transaction(
+        DEFAULT_METRICS.map((m) =>
+          this.prisma.metricConfig.create({
+            data: {
+              key: m.key,
+              label: m.label,
+              sourcePath: m.sourcePath,
+              order: m.order,
+              enabled: m.enabled,
+            },
+          }),
+        ),
+      );
+      configs = await this.prisma.metricConfig.findMany({ orderBy: { order: 'asc' } });
+    }
+
+    const metrics = await this.computePipelineMetrics(from, to);
+
+    const columns: OpsColumn[] = configs
+      .filter((c) => c.enabled)
+      .sort((a, b) => a.order - b.order)
+      .map((c) => ({
+        key: c.key as PipelineMetricKey,
+        label: c.label,
+        count: metrics[c.key as PipelineMetricKey] ?? 0,
+      }));
+
+    return { ok: true, columns, period: { from, to } };
+  }
+
+  /* ---------- Déplacement dans une “colonne libre” (legacy visuel) ---------- */
+  async moveToFreeColumn(leadId: string, columnKey: string) {
+    if (!columnKey) throw new BadRequestException('columnKey requis');
+
+    const [lead, column] = await Promise.all([
+      this.prisma.lead.findUnique({ where: { id: leadId } }),
+      this.prisma.prospectsColumnConfig
+        .findUnique({ where: { id: columnKey } })
+        .catch(() => null),
+    ]);
+    if (!lead) throw new NotFoundException('Lead introuvable');
+
+    const prev = (lead as any).boardColumnKey ?? null;
+
+    // journal visuel (si table dispo)
     try {
-      await (this.prisma as any).leadEvent?.create?.({
-        data: {
-          leadId,
-          type,
-          meta: { source: 'board-drop', columnKey, stage },
-          occurredAt: new Date(),
-        },
+      await (this.prisma as any).leadBoardEvent?.create?.({
+        data: { leadId, columnKey, previousKey: prev, movedAt: new Date() },
       });
     } catch {}
 
-    // 2) on met à jour le lead (comme avant)
+    // MAJ position visuelle
     try {
       await this.prisma.lead.update({
         where: { id: leadId },
-        data: { stage, stageUpdatedAt: new Date() },
+        data: { boardColumnKey: columnKey as any },
       });
     } catch {}
 
-    // 3) ✅ NOUVEAU : on fige l’entrée dans ce stage pour le reporting cumulé
-    try {
-      await this.ensureStageHistory(leadId, stage);
-    } catch {}
-  }
+    // Si colonne mappée à un stage → log event + refléter le stage réel (leadEvent legacy)
+    if (column?.stage) {
+      const stage = column.stage as LeadStage;
+      const type = STAGE_TO_EVENT[stage];
 
-  return { ok: true };
-}
+      try {
+        await (this.prisma as any).leadEvent?.create?.({
+          data: {
+            leadId,
+            type,
+            meta: { source: 'board-drop', columnKey, stage },
+            occurredAt: new Date(),
+          },
+        });
+      } catch {}
+
+      try {
+        await this.prisma.lead.update({
+          where: { id: leadId },
+          data: { stage, stageUpdatedAt: new Date() },
+        });
+      } catch {}
+    }
+
+    return { ok: true };
+  }
 
   /* =========================================================
      =======  ProspectsColumnConfig (CRUD)  ========
      ========================================================= */
-
-  /**
-   * Historique "ce lead est déjà passé dans ce stage au moins 1 fois"
-   * On passe par `as any` parce que tu n'as pas encore généré le modèle Prisma.
-   */
-  private async ensureStageHistory(leadId: string, stage: string, at?: Date) {
-    try {
-      await (this.prisma as any).leadStageHistory?.upsert({
-        where: {
-          lead_stage_unique: {
-            leadId,
-            stage,
-          },
-        },
-        update: {},
-        create: {
-          leadId,
-          stage,
-          occurredAt: at ?? new Date(),
-        },
-      });
-    } catch (e) {
-      // on ne casse pas le flux si la table n'existe pas encore
-    }
-  }
-
-  /**
-   * appelé par /prospects/:id/stage (et aussi par ton alias /leads/:id/stage)
-   * le front peut envoyer "DEMANDE_APPEL" → on remappe vers l'enum Prisma
-   */
-  async changeStage(leadId: string, dto: { stage: string }) {
-    // on normalise d'abord la valeur envoyée par le front
-    const normalized = this.safeStage(dto.stage);
-
-    // 1) update le lead
-    const updated = await this.prisma.lead.update({
-      where: { id: leadId },
-      data: {
-        stage: normalized,
-        stageUpdatedAt: new Date(),
-      },
-    });
-
-    // 2) on mémorise l'entrée dans ce stage (cumulatif)
-    await this.ensureStageHistory(leadId, normalized);
-
-    return updated;
-  }
 
   private DEFAULT_BOARD_COLUMNS: Array<{ label: string; stage?: LeadStage | null; order: number; enabled: boolean }> = [
     { label: 'Leads reçus',           stage: 'LEADS_RECEIVED', order: 0,  enabled: true },
@@ -437,38 +420,6 @@ async moveToFreeColumn(leadId: string, columnKey: string) {
 
     const rows = await this.prisma.prospectsColumnConfig.findMany({ orderBy: { order: 'asc' } });
     return { ok: true, columns: rows };
-  }
-
-  /* ---------- API interne pour consigner une entrée de stage ---------- */
-  async updateLeadStage(leadId: string, toStage: LeadStage, source?: string, externalId?: string) {
-    const lead = await this.prisma.lead.findUnique({ where: { id: leadId }, select: { stage: true }});
-    if (!lead) throw new NotFoundException('Lead not found');
-
-    await this.stageEvents.recordStageEntry({
-      leadId,
-      fromStage: lead.stage,
-      toStage,
-      source,
-      externalId,
-    });
-
-    await this.prisma.lead.update({
-      where: { id: leadId },
-      data: { stage: toStage, stageUpdatedAt: new Date(), boardColumnKey: null },
-    });
-
-    // on garde aussi la trace "est déjà passé dans ce stage"
-    await this.ensureStageHistory(leadId, toStage);
-
-    return { ok: true };
-  }
-
-  async moveToBoardColumn(leadId: string, columnKey: string) {
-    await this.prisma.lead.update({
-      where: { id: leadId },
-      data: { boardColumnKey: columnKey, stageUpdatedAt: new Date() },
-    });
-    return { ok: true };
   }
 
   /* -------------------- Kanban (UTC aligné) -------------------- */
@@ -584,7 +535,7 @@ async moveToFreeColumn(leadId: string, columnKey: string) {
         },
       });
 
-      // Event optionnel WON (pour drill homogène)
+      // Event optionnel WON (legacy, drill)
       try {
         await (this.prisma as any).leadEvent?.create?.({
           data: {
@@ -595,9 +546,6 @@ async moveToFreeColumn(leadId: string, columnKey: string) {
           },
         });
       } catch {}
-
-      // et aussi l'historique stage
-      await this.ensureStageHistory(id, 'WON');
 
       return { ok: true, lead: updated };
     }
@@ -612,7 +560,7 @@ async moveToFreeColumn(leadId: string, columnKey: string) {
       },
     });
 
-    // Si la cible est un stage “évènementiel” → créer un leadEvent cumulatif
+    // Si stage “évènementiel” (legacy) → leadEvent
     if (EVENT_BASED_STAGES.includes(target)) {
       try {
         await (this.prisma as any).leadEvent?.create?.({
@@ -625,9 +573,6 @@ async moveToFreeColumn(leadId: string, columnKey: string) {
         });
       } catch {}
     }
-
-    // on garde aussi la trace "déjà passé"
-    await this.ensureStageHistory(id, target);
 
     return { ok: true, lead: updated };
   }
@@ -729,7 +674,7 @@ async moveToFreeColumn(leadId: string, columnKey: string) {
 
     const lead = await this.prisma.lead.create({ data: payload });
 
-    // Event de création (facultatif mais utile pour la traçabilité)
+    // Event de création (legacy)
     try {
       await (this.prisma as any).leadEvent?.create?.({
         data: {
@@ -740,9 +685,6 @@ async moveToFreeColumn(leadId: string, columnKey: string) {
         },
       });
     } catch {}
-
-    // historique "déjà passé dans LEADS_RECEIVED"
-    await this.ensureStageHistory(lead.id, 'LEADS_RECEIVED', lead.createdAt);
 
     return { ok: true, lead };
   }
@@ -812,11 +754,15 @@ async moveToFreeColumn(leadId: string, columnKey: string) {
 
   async importCsv(buffer: Buffer) {
     const text = buffer.toString('utf8');
-    const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter(l => l.trim().length > 0);
+    const lines = text
+      .replace(/^\uFEFF/, '')
+      .split(/\r?\n/)
+      .filter((l) => l.trim().length > 0);
     if (lines.length === 0) throw new BadRequestException('CSV vide');
 
-    const header = lines[0].split(',').map(h => h.trim());
-    const idx = (name: string) => header.findIndex(h => h.toLowerCase() === name.toLowerCase());
+    const header = lines[0].split(',').map((h) => h.trim());
+    const idx = (name: string) =>
+      header.findIndex((h) => h.toLowerCase() === name.toLowerCase());
 
     const col = {
       firstName: idx('firstName'),
@@ -846,7 +792,9 @@ async moveToFreeColumn(leadId: string, columnKey: string) {
         const tag = (parts[col.tag] || '').trim() || null;
         const source = (parts[col.source] || '').trim() || 'CSV';
         const opportunityValue = this.parseNum(parts[col.opportunityValue]);
-        const stageInput = ((parts[col.stage] || '').trim().toUpperCase() || 'LEADS_RECEIVED') as any;
+        const stageInput = (
+          (parts[col.stage] || '').trim().toUpperCase() || 'LEADS_RECEIVED'
+        ) as any;
         const setterEmail = (parts[col.setterEmail] || '').trim();
         const closerEmail = (parts[col.closerEmail] || '').trim();
 
@@ -854,10 +802,14 @@ async moveToFreeColumn(leadId: string, columnKey: string) {
 
         const setter =
           setterEmail &&
-          (await this.prisma.user.findFirst({ where: { email: setterEmail, role: 'SETTER' } }));
+          (await this.prisma.user.findFirst({
+            where: { email: setterEmail, role: 'SETTER' },
+          }));
         const closer =
           closerEmail &&
-          (await this.prisma.user.findFirst({ where: { email: closerEmail, role: 'CLOSER' } }));
+          (await this.prisma.user.findFirst({
+            where: { email: closerEmail, role: 'CLOSER' },
+          }));
 
         if (email) {
           const existing = await this.prisma.lead.findUnique({ where: { email } });
@@ -871,15 +823,13 @@ async moveToFreeColumn(leadId: string, columnKey: string) {
                 tag,
                 source,
                 opportunityValue,
-                saleValue: stage === 'WON' ? (opportunityValue ?? 0) : undefined,
+                saleValue: stage === 'WON' ? opportunityValue ?? 0 : undefined,
                 stage,
                 setterId: setter ? setter.id : undefined,
                 closerId: closer ? closer.id : undefined,
                 stageUpdatedAt: new Date(),
               },
             });
-            // on mémorise aussi dans l'historique
-            await this.ensureStageHistory(existing.id, stage);
             results.updated++;
           } else {
             const created = await this.prisma.lead.create({
@@ -891,7 +841,7 @@ async moveToFreeColumn(leadId: string, columnKey: string) {
                 tag,
                 source,
                 opportunityValue,
-                saleValue: stage === 'WON' ? (opportunityValue ?? 0) : undefined,
+                saleValue: stage === 'WON' ? opportunityValue ?? 0 : undefined,
                 stage,
                 setterId: setter ? setter.id : undefined,
                 closerId: closer ? closer.id : undefined,
@@ -899,10 +849,14 @@ async moveToFreeColumn(leadId: string, columnKey: string) {
             });
             try {
               await (this.prisma as any).leadEvent?.create?.({
-                data: { leadId: created.id, type: 'LEAD_CREATED', occurredAt: created.createdAt, meta: { source: 'importCsv' } },
+                data: {
+                  leadId: created.id,
+                  type: 'LEAD_CREATED',
+                  occurredAt: created.createdAt,
+                  meta: { source: 'importCsv' },
+                },
               });
             } catch {}
-            await this.ensureStageHistory(created.id, stage);
             results.created++;
           }
         } else {
@@ -914,7 +868,7 @@ async moveToFreeColumn(leadId: string, columnKey: string) {
               tag,
               source,
               opportunityValue,
-              saleValue: stage === 'WON' ? (opportunityValue ?? 0) : undefined,
+              saleValue: stage === 'WON' ? opportunityValue ?? 0 : undefined,
               stage,
               setterId: setter ? setter.id : undefined,
               closerId: closer ? closer.id : undefined,
@@ -922,10 +876,14 @@ async moveToFreeColumn(leadId: string, columnKey: string) {
           });
           try {
             await (this.prisma as any).leadEvent?.create?.({
-              data: { leadId: created.id, type: 'LEAD_CREATED', occurredAt: created.createdAt, meta: { source: 'importCsv' } },
+              data: {
+                leadId: created.id,
+                type: 'LEAD_CREATED',
+                occurredAt: created.createdAt,
+                meta: { source: 'importCsv' },
+              },
             });
           } catch {}
-          await this.ensureStageHistory(created.id, stage);
           results.created++;
         }
       } catch {
@@ -965,7 +923,8 @@ async moveToFreeColumn(leadId: string, columnKey: string) {
   private parseNum(v: string | undefined) {
     if (!v) return null;
     const n = Number(String(v).replace(/\s/g, '').replace(',', '.'));
-    if (!Number.isFinite(n) || n < 0) throw new BadRequestException('opportunityValue doit être >= 0');
+    if (!Number.isFinite(n) || n < 0)
+      throw new BadRequestException('opportunityValue doit être >= 0');
     return n;
   }
 
@@ -1075,32 +1034,91 @@ async moveToFreeColumn(leadId: string, columnKey: string) {
     return this.getMetricsConfig();
   }
 
+  /* ===================== EVENTS (drag & drop) ===================== */
+
   /**
-   * ====== IMPORTANT : /prospects/:id/events ======
-   * - Logge toujours le LeadEvent (historique)
-   * - Si type === "STAGE_ENTERED" et stage fourni (FR), on mappe -> LeadStage
-   *   puis on appelle updateLeadStage pour produire un StageEvent (idempotence).
+   * /prospects/:id/events
+   * Body conforme à CreateProspectEventDto :
+   * { type: "STAGE_ENTERED" | "STAGE_LEFT" | "NOTE", stage?: StageDto, ... }
    */
-  async addEvent(leadId: string, body: CreateProspectEventDto) {
-    const occurredAt = body.occurredAt ? new Date(body.occurredAt) : new Date();
-    const meta = { ...(body as any), source: 'api' as const };
+  async addEvent(leadId: string, dto: CreateProspectEventDto) {
+    const lead = await this.prisma.lead.findUnique({ where: { id: leadId } });
+    if (!lead) throw new NotFoundException('Lead introuvable');
 
-    const ev = await (this.prisma as any).leadEvent?.create?.({
-      data: { leadId, type: body.type, occurredAt, meta },
-    });
-
-    if (body.type === 'STAGE_ENTERED' && body.stage) {
-      const lead = await this.prisma.lead.findUnique({ where: { id: leadId } });
-      if (!lead) throw new NotFoundException('Lead introuvable');
-
-      const stageDto: StageDto | undefined =
-        typeof body.stage === 'string' ? (normalizeStage(body.stage) || (body.stage as StageDto)) : body.stage;
-      if (!stageDto) throw new BadRequestException('Stage invalide');
-
-      const toStage = mapStageDtoToLeadStage(stageDto);
-      await this.updateLeadStage(leadId, toStage, 'api');
+    // NOTE : pour l’instant on ne traite que STAGE_ENTERED
+    if (dto.type === 'NOTE') {
+      // tu pourras plus tard brancher ça sur une table de notes
+      return { ok: true };
     }
 
-    return { ok: true, event: ev ?? null };
+    if (dto.type !== 'STAGE_ENTERED') {
+      // on ignore STAGE_LEFT pour le moment, ou on pourrait tracer un historique plus fin
+      return { ok: true };
+    }
+
+    // On normalise le stage (au cas où ça vienne en FR, avec accents, etc.)
+    const normalized = dto.stage ?? normalizeStage(dto.status);
+    if (!normalized) {
+      throw new BadRequestException('Stage manquant ou invalide');
+    }
+
+    // Map StageDto (FR) -> LeadStage (enum Prisma)
+    const stageMap: Record<StageDto, LeadStage> = {
+      [StageDto.LEAD_RECU]:        'LEADS_RECEIVED',
+      [StageDto.DEMANDE_APPEL]:    'CALL_REQUESTED',
+      [StageDto.APPEL_PASSE]:      'CALL_ATTEMPT',
+      [StageDto.APPEL_REPONDU]:    'CALL_ANSWERED',
+      [StageDto.NO_SHOW_SETTER]:   'SETTER_NO_SHOW',
+
+      [StageDto.RV0_PLANIFIE]:     'RV0_PLANNED',
+      [StageDto.RV0_HONORE]:       'RV0_HONORED',
+      [StageDto.RV0_NO_SHOW]:      'RV0_NO_SHOW',
+
+      [StageDto.RV1_PLANIFIE]:     'RV1_PLANNED',
+      [StageDto.RV1_HONORE]:       'RV1_HONORED',
+      [StageDto.RV1_NO_SHOW]:      'RV1_NO_SHOW',
+
+      [StageDto.RV2_PLANIFIE]:     'RV2_PLANNED',
+      [StageDto.RV2_HONORE]:       'RV2_HONORED',
+
+      [StageDto.WON]:              'WON',
+      [StageDto.LOST]:             'LOST',
+      [StageDto.NOT_QUALIFIED]:    'NOT_QUALIFIED',
+    };
+
+    const toStage = stageMap[normalized];
+    if (!toStage) {
+      throw new BadRequestException('Stage inconnu');
+    }
+
+    const occurredAt = dto.occurredAt ? new Date(dto.occurredAt) : new Date();
+
+    // On crée un StageEvent (avec contrainte unique leadId+toStage si tu l’as définie)
+    try {
+      await this.prisma.stageEvent.create({
+        data: {
+          leadId,
+          fromStage: lead.stage,
+          toStage,
+          occurredAt,
+          source: 'prospects-board',
+          externalId: null,
+        },
+      });
+    } catch (e) {
+      // si duplication (unique constraint), on ignore, l’event a déjà été compté
+    }
+
+    // On reflète le stage courant sur le Lead
+    await this.prisma.lead.update({
+      where: { id: leadId },
+      data: {
+        stage: toStage,
+        stageUpdatedAt: occurredAt,
+      },
+    });
+
+    return { ok: true };
   }
+
 }

@@ -1,3 +1,4 @@
+// backend/src/modules/reporting/reporting.controller.ts
 import { Controller, Get, Query } from '@nestjs/common';
 import { ReportingService } from './reporting.service';
 
@@ -5,144 +6,136 @@ import { ReportingService } from './reporting.service';
 export class ReportingController {
   constructor(private readonly reporting: ReportingService) {}
 
-  // ===== KPIs déjà utilisés par le front =====
+  /* --------- Résumé global --------- */
   @Get('summary')
-  summary(@Query('from') from?: string, @Query('to') to?: string) {
+  async getSummary(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
     return this.reporting.summary(from, to);
   }
 
+  /* --------- Leads reçus (créations) --------- */
   @Get('leads-received')
-  leadsReceived(@Query('from') from?: string, @Query('to') to?: string) {
+  async getLeadsReceived(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
     return this.reporting.leadsReceived(from, to);
   }
 
+  /* --------- CA / ventes par semaine (WON) --------- */
   @Get('sales-weekly')
-  salesWeekly(@Query('from') from?: string, @Query('to') to?: string) {
+  async getSalesWeekly(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
     return this.reporting.salesWeekly(from, to);
   }
 
+  /* --------- Classement setters --------- */
   @Get('setters')
-  setters(@Query('from') from?: string, @Query('to') to?: string) {
+  async getSetters(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
     return this.reporting.settersReport(from, to);
   }
 
+  /* --------- Classement closers --------- */
   @Get('closers')
-  closers(@Query('from') from?: string, @Query('to') to?: string) {
+  async getClosers(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
     return this.reporting.closersReport(from, to);
   }
 
+  /* --------- Équipe de choc (duos setter × closer) --------- */
   @Get('duos')
-  async duos(
-    @Query('from') from?: string,
-    @Query('to') to?: string,
-    @Query('top') top?: string,
-  ) {
-    const n = Math.max(1, Math.min(50, Number(top) || 10));
-    return this.reporting.duosReport(from, to, n);
-  }
-
-  // ====== NOUVEAU : métriques pipeline basées uniquement sur les STAGES ======
-  @Get('pipeline-metrics')
-  pipelineMetrics(
-    @Query('keys') keysCsv: string,
-    @Query('from') from?: string,
-    @Query('to') to?: string,
-    @Query('mode') mode: 'entered' | 'current' = 'entered',
-  ) {
-    const keys = (keysCsv || '').split(',').map(s => s.trim()).filter(Boolean);
-    return this.reporting.pipelineMetrics({ keys, from, to, mode });
-  }
-
-  // 🔥 NOUVEAU : compte tous les leads qui sont DÉJÀ passés au moins une fois dans chaque stage
-  @Get('pipeline-stage-totals')
-  pipelineStageTotals(
+  async getDuos(
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    return this.reporting.pipelineStageTotals(from, to);
+    return this.reporting.duosReport(from, to);
   }
 
-  // Semaine par semaine (entered par défaut)
+  /* --------- Weekly ops (RV0 / RV1 / RV2 / LOST / NOT_QUALIFIED) --------- */
   @Get('weekly-ops')
-  weeklyOps(@Query('from') from?: string, @Query('to') to?: string) {
-    return this.reporting.weeklySeries(from, to).then(rows => ({ ok: true, rows }));
-  }
-
-  /* ===== METRICS JOURNALIÈRES ===== */
-  @Get('metric/call-requests')
-  metricCallRequests(@Query('from') from?: string, @Query('to') to?: string) {
-    return this.reporting.metricCallRequests(from, to);
-  }
-
-  @Get('metric/calls')
-  metricCalls(@Query('from') from?: string, @Query('to') to?: string) {
-    return this.reporting.metricCalls(from, to);
-  }
-
-  @Get('metric/calls-answered')
-  metricCallsAnswered(@Query('from') from?: string, @Query('to') to?: string) {
-    return this.reporting.metricCallsAnswered(from, to);
-  }
-
-  // ===== Funnel agrégé =====
-  @Get('funnel')
-  funnel(@Query('from') from?: string, @Query('to') to?: string) {
-    return this.reporting.funnel(from, to);
-  }
-
-  // ===== DRILLS =====
-  @Get('drill/appointments')
-  drillAppointments(
+  async getWeeklyOps(
     @Query('from') from?: string,
     @Query('to') to?: string,
-    @Query('type') type?: 'RV0'|'RV1'|'RV2',
-    @Query('status') status?: 'HONORED'|'POSTPONED'|'CANCELED'|'NO_SHOW'|'NOT_QUALIFIED',
-    @Query('userId') userId?: string,
-    @Query('limit') limit = '2000',
   ) {
-    return this.reporting.drillAppointments({ from, to, type, status, userId, limit: Number(limit) });
+    const rows = await this.reporting.weeklySeries(from, to);
+    return { ok: true as const, rows };
   }
 
-  @Get('drill/won')
-  drillWon(
-    @Query('from') from?: string,
-    @Query('to') to?: string,
-    @Query('limit') limit = '2000',
-  ) {
-    return this.reporting.drillWon({ from, to, limit: Number(limit) } as any);
-  }
-
+  /* --------- Drill: leads reçus --------- */
   @Get('drill/leads-received')
-  drillLeadsReceived(
+  async drillLeads(
     @Query('from') from?: string,
     @Query('to') to?: string,
-    @Query('limit') limit = '2000',
+    @Query('limit') limitStr?: string,
   ) {
-    return this.reporting.drillLeadsReceived({ from, to, limit: Number(limit) } as any);
+    const limit = Number(limitStr ?? 2000);
+    return this.reporting.drillLeadsReceived({ from, to, limit });
   }
 
+  /* --------- Drill: ventes (WON) --------- */
+  @Get('drill/won')
+  async drillWon(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('limit') limitStr?: string,
+  ) {
+    const limit = Number(limitStr ?? 2000);
+    return this.reporting.drillWon({ from, to, limit });
+  }
+
+  /* --------- Drill: appointments (RV0 / RV1 / RV2) --------- */
+  @Get('drill/appointments')
+  async drillAppointments(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('type') type?: 'RV0' | 'RV1' | 'RV2',
+    @Query('status') status?: 'HONORED' | 'POSTPONED' | 'CANCELED' | 'NO_SHOW' | 'NOT_QUALIFIED',
+    @Query('userId') userId?: string,
+    @Query('limit') limitStr?: string,
+  ) {
+    const limit = Number(limitStr ?? 2000);
+    return this.reporting.drillAppointments({ from, to, type, status, userId, limit });
+  }
+
+  /* --------- Drill: demandes d’appel --------- */
   @Get('drill/call-requests')
-  drillCallRequests(
+  async drillCallRequests(
     @Query('from') from?: string,
     @Query('to') to?: string,
-    @Query('limit') limit = '2000',
+    @Query('limit') limitStr?: string,
   ) {
-    return this.reporting.drillCallRequests({ from, to, limit: Number(limit) });
+    const limit = Number(limitStr ?? 2000);
+    return this.reporting.drillCallRequests({ from, to, limit });
   }
 
+  /* --------- Drill: appels (passés / répondus / no-show setter) --------- */
   @Get('drill/calls')
-  drillCalls(
+  async drillCalls(
     @Query('from') from?: string,
     @Query('to') to?: string,
-    @Query('answered') answered?: string,
-    @Query('setterNoShow') setterNoShow?: string,
-    @Query('limit') limit = '2000',
+    @Query('answered') answeredStr?: string,
+    @Query('setterNoShow') setterNoShowStr?: string,
+    @Query('limit') limitStr?: string,
   ) {
+    const answered = answeredStr === '1' || answeredStr === 'true';
+    const setterNoShow = setterNoShowStr === '1' || setterNoShowStr === 'true';
+    const limit = Number(limitStr ?? 2000);
+
     return this.reporting.drillCalls({
-      from, to,
-      answered: answered ? Boolean(Number(answered)) : false,
-      setterNoShow: setterNoShow ? Boolean(Number(setterNoShow)) : false,
-      limit: Number(limit),
+      from,
+      to,
+      answered,
+      setterNoShow,
+      limit,
     });
   }
 }

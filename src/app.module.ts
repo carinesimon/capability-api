@@ -2,11 +2,10 @@ import { Module } from '@nestjs/common';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-
-import { LeadsModule } from './modules/leads/leads.module';
-
+import { LeadsModule } from './leads/leads.module';
 import { AdminModule } from './admin/admin.module';
-import { PrismaModule } from './prisma/prisma.module';
+import { PrismaModule } from './prisma/prisma.module';   // ✅ Injection Prisma
+
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { AppointmentsModule } from './appointments/appointments.module';
@@ -19,20 +18,14 @@ import { WebhooksModule } from './webhooks/webhooks.module';
 import { ProspectsModule } from './prospects/prospects.module';
 import { GhlModule } from './integrations/ghl/ghl.module';
 import { IntegrationsModule } from './integrations/integrations.module';
-
-// ✅ tu avais déjà un dossier "modules", donc on garde ça
-import { MetricsModule } from './modules/metrics/metrics.module';
-
-// tu avais ajouté ce contrôleur alias
-import { LeadsAliasController } from './leads/leads-alias.controller';
+import { MetricsModule } from './modules/metrics/metrics.module'; 
 
 @Module({
   imports: [
-    PrismaModule,          // doit être importé une seule fois
+    PrismaModule,                // ✅ doit être chargé une seule fois au root
     AuthModule,
     UsersModule,
-    LeadsModule,           // ✅ chemin corrigé
-    MetricsModule,
+    LeadsModule,
     AdminModule,
     AppointmentsModule,
     AttributionModule,
@@ -44,11 +37,9 @@ import { LeadsAliasController } from './leads/leads-alias.controller';
     ProspectsModule,
     GhlModule,
     IntegrationsModule,
+    MetricsModule,
   ],
-  controllers: [
-    AppController,
-    LeadsAliasController,
-  ],
+  controllers: [AppController],
   providers: [AppService],
 })
 export class AppModule {}
