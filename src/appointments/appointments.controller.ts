@@ -25,6 +25,7 @@ export class AppointmentsController {
       userId,
       type,
     });
+    
   }
 
   @Get('ttfc')
@@ -33,3 +34,4 @@ export class AppointmentsController {
     return { leadId, timeToFirstContactMinutes: minutes };
   }
 }
+
