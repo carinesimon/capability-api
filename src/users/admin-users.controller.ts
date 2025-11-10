@@ -32,4 +32,5 @@ export class AdminUsersController {
   async update(@Param("id") id: string, @Body() dto: AdminUpdateUserDto) {
     return this.service.update(id, dto as any);
   }
+  
 }
