@@ -10,7 +10,7 @@ exports.AppModule = void 0;
 const common_1 = require("@nestjs/common");
 const app_controller_1 = require("./app.controller");
 const app_service_1 = require("./app.service");
-const leads_module_1 = require("../src/modules/leads/leads.module");
+const leads_module_1 = require("./leads/leads.module");
 const admin_module_1 = require("./admin/admin.module");
 const prisma_module_1 = require("./prisma/prisma.module");
 const auth_module_1 = require("./auth/auth.module");
@@ -26,7 +26,6 @@ const prospects_module_1 = require("./prospects/prospects.module");
 const ghl_module_1 = require("./integrations/ghl/ghl.module");
 const integrations_module_1 = require("./integrations/integrations.module");
 const metrics_module_1 = require("./modules/metrics/metrics.module");
-const leads_alias_controller_1 = require("./leads/leads-alias.controller");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -37,7 +36,6 @@ exports.AppModule = AppModule = __decorate([
             auth_module_1.AuthModule,
             users_module_1.UsersModule,
             leads_module_1.LeadsModule,
-            metrics_module_1.MetricsModule,
             admin_module_1.AdminModule,
             appointments_module_1.AppointmentsModule,
             attribution_module_1.AttributionModule,
@@ -49,8 +47,9 @@ exports.AppModule = AppModule = __decorate([
             prospects_module_1.ProspectsModule,
             ghl_module_1.GhlModule,
             integrations_module_1.IntegrationsModule,
+            metrics_module_1.MetricsModule,
         ],
-        controllers: [app_controller_1.AppController, leads_alias_controller_1.LeadsAliasController,],
+        controllers: [app_controller_1.AppController],
         providers: [app_service_1.AppService],
     })
 ], AppModule);
