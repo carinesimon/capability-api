@@ -141,5 +141,6 @@ export class MetricsService {
       total: events.length,
       byDay,
     };
+    
   }
 }
