@@ -15,4 +15,5 @@ export class AttributionController {
   async ensure(@Query('leadId') leadId: string) {
     return this.service.ensureSetter(leadId);
   }
+  
 }
