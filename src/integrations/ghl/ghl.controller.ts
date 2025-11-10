@@ -35,6 +35,7 @@ export class GhlController {
     const fresh = await this.ghl.deduplicate(eventId);
     if (!fresh) {
       return { ok: true, handled: 'duplicate' };
+      
     }
 
     // 3) Contact events
