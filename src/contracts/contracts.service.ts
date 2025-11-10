@@ -31,4 +31,5 @@ export class ContractsService {
       include: { user: true, lead: true },
     });
   }
+  
 }
