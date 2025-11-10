@@ -54,10 +54,10 @@ export declare class WebhooksService {
         createdAt: Date;
         updatedAt: Date;
         stage: import("@prisma/client").$Enums.LeadStage;
-        source: string | null;
         ghlContactId: string | null;
         phone: string | null;
         tag: string | null;
+        source: string | null;
         stageUpdatedAt: Date;
         stageId: string | null;
         boardColumnKey: string | null;
