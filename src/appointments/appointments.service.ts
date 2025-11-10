@@ -47,4 +47,6 @@ export class AppointmentsService {
     const diffMs = firstRv0.scheduledAt.getTime() - lead.createdAt.getTime();
     return Math.round(diffMs / 60000); // minutes
   }
+  
 }
+
