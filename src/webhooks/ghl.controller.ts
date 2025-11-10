@@ -15,4 +15,5 @@ export class GhlController {
     const parsed = Buffer.isBuffer(req.body) ? JSON.parse(rawBody) : req.body;
     return this.service.handleGhlWebhook(rawBody, headers, parsed);
   }
+  
 }
