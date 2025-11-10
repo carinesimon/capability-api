@@ -1183,6 +1183,7 @@ async closersReport(from?: string, to?: string): Promise<CloserRow[]> {
           stageUpdatedAt: L.stageUpdatedAt.toISOString(),
         };
       });
+    
     return { ok: true, count: items.length, items };
   }
 }
