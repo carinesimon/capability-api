@@ -38,4 +38,5 @@ export class GhlWebhookController {
 
     return { ok: true };
   }
+  
 }
