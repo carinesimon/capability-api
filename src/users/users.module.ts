@@ -8,4 +8,5 @@ import { PrismaService } from "../prisma/prisma.service";
   providers: [AdminUsersService, PrismaService],
   exports: [AdminUsersService],
 })
+  
 export class UsersModule {}
