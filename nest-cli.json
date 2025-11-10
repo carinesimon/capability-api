@@ -8,4 +8,5 @@
     "webpack": false,
     "tsConfigPath": "tsconfig.build.json"
   }
+  
 }
