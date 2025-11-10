@@ -13,5 +13,7 @@ import { LeadsController } from './leads.controller';
     LeadsService,
     StageEventsService, // 👈 on l’exporte pour que les autres modules puissent l’injecter
   ],
+  
 })
+
 export class LeadsModule {}
