@@ -8,4 +8,6 @@ export class CreateContractDto {
 
   @IsString() userId: string;     // closer
   @IsOptional() @IsString() leadId?: string; // lead (pour attribuer au setter)
+  
 }
+
