@@ -1,7 +1,6 @@
 import { AppointmentsService } from './appointments.service';
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { AppointmentType } from '@prisma/client';
-
 export declare class AppointmentsController {
     private readonly service;
     constructor(service: AppointmentsService);
@@ -26,10 +25,10 @@ export declare class AppointmentsController {
             createdAt: Date;
             updatedAt: Date;
             stage: import("@prisma/client").$Enums.LeadStage;
-            source: string | null;
             ghlContactId: string | null;
             phone: string | null;
             tag: string | null;
+            source: string | null;
             stageUpdatedAt: Date;
             stageId: string | null;
             boardColumnKey: string | null;
@@ -41,13 +40,13 @@ export declare class AppointmentsController {
     } & {
         id: string;
         createdAt: Date;
+        userId: string | null;
         leadId: string | null;
+        provider: string;
         externalId: string;
         type: import("@prisma/client").$Enums.AppointmentType;
-        provider: string;
         status: import("@prisma/client").$Enums.AppointmentStatus;
         scheduledAt: Date;
-        userId: string | null;
     }, never, import("@prisma/client/runtime/library").DefaultArgs, import("@prisma/client").Prisma.PrismaClientOptions>;
     findAll(from?: string, to?: string, userId?: string, type?: AppointmentType): import("@prisma/client").Prisma.PrismaPromise<({
         user: {
@@ -70,10 +69,10 @@ export declare class AppointmentsController {
             createdAt: Date;
             updatedAt: Date;
             stage: import("@prisma/client").$Enums.LeadStage;
-            source: string | null;
             ghlContactId: string | null;
             phone: string | null;
             tag: string | null;
+            source: string | null;
             stageUpdatedAt: Date;
             stageId: string | null;
             boardColumnKey: string | null;
@@ -85,13 +84,13 @@ export declare class AppointmentsController {
     } & {
         id: string;
         createdAt: Date;
+        userId: string | null;
         leadId: string | null;
+        provider: string;
         externalId: string;
         type: import("@prisma/client").$Enums.AppointmentType;
-        provider: string;
         status: import("@prisma/client").$Enums.AppointmentStatus;
         scheduledAt: Date;
-        userId: string | null;
     })[]>;
     ttfc(leadId: string): Promise<{
         leadId: string;

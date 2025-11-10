@@ -1,6 +1,5 @@
 import { ContractsService } from './contracts.service';
 import { CreateContractDto } from './dto/create-contract.dto';
-
 export declare class ContractsController {
     private readonly service;
     constructor(service: ContractsService);
@@ -25,10 +24,10 @@ export declare class ContractsController {
             createdAt: Date;
             updatedAt: Date;
             stage: import("@prisma/client").$Enums.LeadStage;
-            source: string | null;
             ghlContactId: string | null;
             phone: string | null;
             tag: string | null;
+            source: string | null;
             stageUpdatedAt: Date;
             stageId: string | null;
             boardColumnKey: string | null;
@@ -40,9 +39,9 @@ export declare class ContractsController {
     } & {
         id: string;
         createdAt: Date;
+        userId: string;
         leadId: string | null;
         amount: number;
-        userId: string;
         deposit: number | null;
         monthly: number | null;
         total: number;
@@ -68,10 +67,10 @@ export declare class ContractsController {
             createdAt: Date;
             updatedAt: Date;
             stage: import("@prisma/client").$Enums.LeadStage;
-            source: string | null;
             ghlContactId: string | null;
             phone: string | null;
             tag: string | null;
+            source: string | null;
             stageUpdatedAt: Date;
             stageId: string | null;
             boardColumnKey: string | null;
@@ -83,9 +82,9 @@ export declare class ContractsController {
     } & {
         id: string;
         createdAt: Date;
+        userId: string;
         leadId: string | null;
         amount: number;
-        userId: string;
         deposit: number | null;
         monthly: number | null;
         total: number;
