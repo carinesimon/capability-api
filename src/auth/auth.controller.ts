@@ -29,4 +29,6 @@ export class AuthController {
   ) {
     return this.auth.adminCreateUser(req.user.sub, body);
   }
+  
 }
+
