@@ -22,4 +22,5 @@ export class LeadsController {
   findOne(@Param('id') id: string) {
     return this.leadsService.findOne(id);
   }
+  
 }
