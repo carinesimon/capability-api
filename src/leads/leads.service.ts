@@ -14,6 +14,7 @@ export class LeadsService {
     if (!lead.setterId) {
       return this.attribution.ensureSetter(lead.id);
     }
+    
     return lead;
   }
 
