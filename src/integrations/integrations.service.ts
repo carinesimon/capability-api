@@ -216,6 +216,7 @@ export class IntegrationsService {
         payload: true,
       },
     });
+    
   }
 
   // ========= Replay d’un event =========
@@ -738,3 +739,4 @@ export class IntegrationsService {
     return { mapped, stage, report };
   }
 }
+
