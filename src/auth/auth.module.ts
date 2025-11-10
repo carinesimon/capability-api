@@ -5,9 +5,12 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { PrismaModule } from '../prisma/prisma.module';
+import type { StringValue } from 'ms'; // 👈 important
 
 const jwtSecret = process.env.JWT_SECRET || 'dev-secret';
-const jwtExpires = process.env.JWT_EXPIRES || '2h';
+
+// On force le type vers StringValue (format '2h', '10m', '30s', etc.)
+const jwtExpires: StringValue = (process.env.JWT_EXPIRES as StringValue) || '2h';
 
 @Module({
   imports: [
@@ -15,7 +18,9 @@ const jwtExpires = process.env.JWT_EXPIRES || '2h';
     PassportModule,
     JwtModule.register({
       secret: jwtSecret,
-      signOptions: { expiresIn: jwtExpires },
+      signOptions: {
+        expiresIn: jwtExpires, // ✅ maintenant c’est bien: number | StringValue | undefined
+      },
     }),
   ],
   controllers: [AuthController],
