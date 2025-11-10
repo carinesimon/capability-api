@@ -11,10 +11,8 @@ const common_1 = require("@nestjs/common");
 const prospects_controller_1 = require("./prospects.controller");
 const prospects_service_1 = require("./prospects.service");
 const prisma_service_1 = require("../prisma/prisma.service");
-const reporting_service_1 = require("../reporting/reporting.service");
-const leads_module_1 = require("../modules/leads/leads.module");
 const prisma_module_1 = require("../prisma/prisma.module");
-const prospects_compat_controller_1 = require("./prospects-compat.controller");
+const stage_events_service_1 = require("../modules/leads/stage-events.service");
 let ProspectsModule = class ProspectsModule {
 };
 exports.ProspectsModule = ProspectsModule;
@@ -22,14 +20,12 @@ exports.ProspectsModule = ProspectsModule = __decorate([
     (0, common_1.Module)({
         imports: [
             prisma_module_1.PrismaModule,
-            leads_module_1.LeadsModule,
         ],
-        controllers: [prospects_controller_1.ProspectsController, prospects_compat_controller_1.ProspectsCompatController],
+        controllers: [prospects_controller_1.ProspectsController],
         providers: [
             prospects_service_1.ProspectsService,
             prisma_service_1.PrismaService,
-            reporting_service_1.ReportingService,
-            leads_module_1.LeadsModule,
+            stage_events_service_1.StageEventsService
         ],
         exports: [prospects_service_1.ProspectsService],
     })

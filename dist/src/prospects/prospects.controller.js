@@ -31,7 +31,7 @@ let ProspectsController = class ProspectsController {
             select: { label: true, stage: true, order: true },
             orderBy: { order: 'asc' },
         });
-        return rows.map(r => ({ value: r.stage, label: r.label }));
+        return rows.map((r) => ({ value: r.stage, label: r.label }));
     }
     getBoard(from, to, limit) {
         return this.svc.getBoard({ from, to, limit: Number(limit ?? 200) });
@@ -48,14 +48,16 @@ let ProspectsController = class ProspectsController {
             select: { id: true, firstName: true, email: true, role: true },
             orderBy: [{ role: 'asc' }, { firstName: 'asc' }],
         });
-        const setters = rows.filter(r => r.role === client_1.Role.SETTER).map(r => ({ id: r.id, firstName: r.firstName, email: r.email }));
-        const closers = rows.filter(r => r.role === client_1.Role.CLOSER).map(r => ({ id: r.id, firstName: r.firstName, email: r.email }));
+        const setters = rows
+            .filter((r) => r.role === client_1.Role.SETTER)
+            .map((r) => ({ id: r.id, firstName: r.firstName, email: r.email }));
+        const closers = rows
+            .filter((r) => r.role === client_1.Role.CLOSER)
+            .map((r) => ({ id: r.id, firstName: r.firstName, email: r.email }));
         return { setters, closers };
     }
-    async addEvent(id, body) {
-        if (!body?.type)
-            throw new common_1.BadRequestException('type requis');
-        return this.svc.addEvent(id, body);
+    async addEvent(id, dto) {
+        return this.svc.addEvent(id, dto);
     }
     createLead(body) {
         return this.svc.createLead(body);

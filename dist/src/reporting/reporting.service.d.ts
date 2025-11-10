@@ -28,20 +28,6 @@ type CloserRow = {
     roasPlanned: number | null;
     roasHonored: number | null;
 };
-type DuoRow = {
-    setterId: string;
-    setterName: string;
-    setterEmail: string;
-    closerId: string;
-    closerName: string;
-    closerEmail: string;
-    salesCount: number;
-    revenue: number;
-    avgDeal: number;
-    rv1Planned: number;
-    rv1Honored: number;
-    rv1HonorRate: number | null;
-};
 type LeadsReceivedOut = {
     total: number;
     byDay?: Array<{
@@ -117,6 +103,20 @@ type FunnelOut = {
     totals: FunnelTotals;
     weekly: FunnelWeeklyRow[];
 };
+type DuoRow = {
+    setterId: string;
+    setterName: string;
+    setterEmail: string;
+    closerId: string;
+    closerName: string;
+    closerEmail: string;
+    salesCount: number;
+    revenue: number;
+    avgDeal: number;
+    rv1Planned: number;
+    rv1Honored: number;
+    rv1HonorRate: number | null;
+};
 export declare class ReportingService {
     private prisma;
     constructor(prisma: PrismaService);
@@ -124,29 +124,24 @@ export declare class ReportingService {
     private wonFilter;
     private sumSpend;
     leadsReceived(from?: string, to?: string): Promise<LeadsReceivedOut>;
-    private variantsFor;
-    private historyWhere;
-    private countHistory;
-    private perDayFromHistory;
-    private countHistoryMany;
     salesWeekly(from?: string, to?: string): Promise<SalesWeeklyItem[]>;
     settersReport(from?: string, to?: string): Promise<SetterRow[]>;
-    duosReport(from?: string, to?: string, top?: number): Promise<DuoRow[]>;
-    pipelineStageTotals(from?: string, to?: string): Promise<{
-        ok: boolean;
-        stages: any;
-    }>;
     closersReport(from?: string, to?: string): Promise<CloserRow[]>;
+    duosReport(from?: string, to?: string): Promise<DuoRow[]>;
     summary(from?: string, to?: string): Promise<SummaryOut>;
+    private stageIdsForKeys;
+    private countEnteredInStages;
+    private countCurrentInStages;
     pipelineMetrics(args: {
         keys: string[];
         from?: string;
         to?: string;
         mode?: 'entered' | 'current';
     }): Promise<Record<string, number>>;
-    private funnelFromHistory;
+    private funnelFromStages;
     funnel(from?: string, to?: string): Promise<FunnelOut>;
     weeklySeries(from?: string, to?: string): Promise<WeeklyOpsRow[]>;
+    private perDayFromStages;
     metricCallRequests(from?: string, to?: string): Promise<{
         total: number;
         byDay?: Array<{

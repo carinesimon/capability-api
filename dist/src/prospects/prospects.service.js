@@ -11,11 +11,9 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ProspectsService = void 0;
 const common_1 = require("@nestjs/common");
+const create_prospect_event_dto_1 = require("./dto/create-prospect-event.dto");
 const prisma_service_1 = require("../prisma/prisma.service");
 const client_1 = require("@prisma/client");
-const reporting_service_1 = require("../reporting/reporting.service");
-const stage_events_service_1 = require("../modules/leads/stage-events.service");
-const create_prospect_event_dto_1 = require("./dto/create-prospect-event.dto");
 const DEFAULT_METRICS = [
     { key: 'LEADS_RECEIVED', label: 'Leads reçus', sourcePath: 'funnel.totals.leads', order: 0, enabled: true },
     { key: 'CALL_REQUESTED', label: 'Demandes d’appel', sourcePath: 'funnel.totals.callRequests', order: 1, enabled: true },
@@ -63,28 +61,13 @@ const EVENT_BASED_STAGES = [
     'CALL_ATTEMPT',
     'CALL_ANSWERED',
     'SETTER_NO_SHOW',
-    'FOLLOW_UP',
-    'RV0_PLANNED',
-    'RV0_HONORED',
-    'RV0_NO_SHOW',
-    'RV1_PLANNED',
-    'RV1_HONORED',
-    'RV1_NO_SHOW',
-    'RV1_POSTPONED',
-    'RV2_PLANNED',
-    'RV2_HONORED',
-    'RV2_POSTPONED',
     'NOT_QUALIFIED',
     'LOST',
-    'WON',
 ];
 const num = (v) => {
     const n = Number(v);
     return Number.isFinite(n) ? n : 0;
 };
-function getByPath(obj, path) {
-    return path.split('.').reduce((o, k) => (o ? o[k] : undefined), obj);
-}
 function toUTCDateOnly(s) {
     if (!s)
         return undefined;
@@ -112,35 +95,10 @@ function between(field, r) {
         return {};
     return { [field]: { gte: r.from ?? undefined, lte: r.to ?? undefined } };
 }
-const mapStageDtoToLeadStage = (s) => {
-    switch (s) {
-        case create_prospect_event_dto_1.StageDto.LEAD_RECU: return 'LEADS_RECEIVED';
-        case create_prospect_event_dto_1.StageDto.DEMANDE_APPEL: return 'CALL_REQUESTED';
-        case create_prospect_event_dto_1.StageDto.APPEL_PASSE: return 'CALL_ATTEMPT';
-        case create_prospect_event_dto_1.StageDto.APPEL_REPONDU: return 'CALL_ANSWERED';
-        case create_prospect_event_dto_1.StageDto.NO_SHOW_SETTER: return 'SETTER_NO_SHOW';
-        case create_prospect_event_dto_1.StageDto.RV0_PLANIFIE: return 'RV0_PLANNED';
-        case create_prospect_event_dto_1.StageDto.RV0_HONORE: return 'RV0_HONORED';
-        case create_prospect_event_dto_1.StageDto.RV0_NO_SHOW: return 'RV0_NO_SHOW';
-        case create_prospect_event_dto_1.StageDto.RV1_PLANIFIE: return 'RV1_PLANNED';
-        case create_prospect_event_dto_1.StageDto.RV1_HONORE: return 'RV1_HONORED';
-        case create_prospect_event_dto_1.StageDto.RV1_NO_SHOW: return 'RV1_NO_SHOW';
-        case create_prospect_event_dto_1.StageDto.RV2_PLANIFIE: return 'RV2_PLANNED';
-        case create_prospect_event_dto_1.StageDto.RV2_HONORE: return 'RV2_HONORED';
-        case create_prospect_event_dto_1.StageDto.WON: return 'WON';
-        case create_prospect_event_dto_1.StageDto.LOST: return 'LOST';
-        case create_prospect_event_dto_1.StageDto.NOT_QUALIFIED: return 'NOT_QUALIFIED';
-        default: return 'LEADS_RECEIVED';
-    }
-};
 let ProspectsService = class ProspectsService {
     prisma;
-    reporting;
-    stageEvents;
-    constructor(prisma, reporting, stageEvents) {
+    constructor(prisma) {
         this.prisma = prisma;
-        this.reporting = reporting;
-        this.stageEvents = stageEvents;
     }
     getMetricsCatalog() {
         return {
@@ -150,12 +108,63 @@ let ProspectsService = class ProspectsService {
             })),
         };
     }
+    async computePipelineMetrics(from, to) {
+        const r = toRange(from, to);
+        const metrics = {};
+        for (const m of DEFAULT_METRICS) {
+            metrics[m.key] = 0;
+        }
+        const leadsReceived = await this.prisma.lead.count({
+            where: between('createdAt', r),
+        });
+        metrics.LEADS_RECEIVED = leadsReceived;
+        const stageWhere = between('occurredAt', r);
+        const stageRows = await this.prisma.stageEvent.groupBy({
+            by: ['toStage'],
+            where: stageWhere,
+            _count: { _all: true },
+        });
+        for (const row of stageRows) {
+            const key = row.toStage;
+            if (metrics[key] != null) {
+                metrics[key] = row._count._all;
+            }
+        }
+        return metrics;
+    }
+    async getOpsColumns(from, to) {
+        let configs = await this.prisma.metricConfig.findMany({ orderBy: { order: 'asc' } });
+        if (!configs.length) {
+            await this.prisma.$transaction(DEFAULT_METRICS.map((m) => this.prisma.metricConfig.create({
+                data: {
+                    key: m.key,
+                    label: m.label,
+                    sourcePath: m.sourcePath,
+                    order: m.order,
+                    enabled: m.enabled,
+                },
+            })));
+            configs = await this.prisma.metricConfig.findMany({ orderBy: { order: 'asc' } });
+        }
+        const metrics = await this.computePipelineMetrics(from, to);
+        const columns = configs
+            .filter((c) => c.enabled)
+            .sort((a, b) => a.order - b.order)
+            .map((c) => ({
+            key: c.key,
+            label: c.label,
+            count: metrics[c.key] ?? 0,
+        }));
+        return { ok: true, columns, period: { from, to } };
+    }
     async moveToFreeColumn(leadId, columnKey) {
         if (!columnKey)
             throw new common_1.BadRequestException('columnKey requis');
         const [lead, column] = await Promise.all([
             this.prisma.lead.findUnique({ where: { id: leadId } }),
-            this.prisma.prospectsColumnConfig.findUnique({ where: { id: columnKey } }).catch(() => null),
+            this.prisma.prospectsColumnConfig
+                .findUnique({ where: { id: columnKey } })
+                .catch(() => null),
         ]);
         if (!lead)
             throw new common_1.NotFoundException('Lead introuvable');
@@ -194,44 +203,8 @@ let ProspectsService = class ProspectsService {
                 });
             }
             catch { }
-            try {
-                await this.ensureStageHistory(leadId, stage);
-            }
-            catch { }
         }
         return { ok: true };
-    }
-    async ensureStageHistory(leadId, stage, at) {
-        try {
-            await this.prisma.leadStageHistory?.upsert({
-                where: {
-                    lead_stage_unique: {
-                        leadId,
-                        stage,
-                    },
-                },
-                update: {},
-                create: {
-                    leadId,
-                    stage,
-                    occurredAt: at ?? new Date(),
-                },
-            });
-        }
-        catch (e) {
-        }
-    }
-    async changeStage(leadId, dto) {
-        const normalized = this.safeStage(dto.stage);
-        const updated = await this.prisma.lead.update({
-            where: { id: leadId },
-            data: {
-                stage: normalized,
-                stageUpdatedAt: new Date(),
-            },
-        });
-        await this.ensureStageHistory(leadId, normalized);
-        return updated;
     }
     DEFAULT_BOARD_COLUMNS = [
         { label: 'Leads reçus', stage: 'LEADS_RECEIVED', order: 0, enabled: true },
@@ -294,31 +267,6 @@ let ProspectsService = class ProspectsService {
             })));
         const rows = await this.prisma.prospectsColumnConfig.findMany({ orderBy: { order: 'asc' } });
         return { ok: true, columns: rows };
-    }
-    async updateLeadStage(leadId, toStage, source, externalId) {
-        const lead = await this.prisma.lead.findUnique({ where: { id: leadId }, select: { stage: true } });
-        if (!lead)
-            throw new common_1.NotFoundException('Lead not found');
-        await this.stageEvents.recordStageEntry({
-            leadId,
-            fromStage: lead.stage,
-            toStage,
-            source,
-            externalId,
-        });
-        await this.prisma.lead.update({
-            where: { id: leadId },
-            data: { stage: toStage, stageUpdatedAt: new Date(), boardColumnKey: null },
-        });
-        await this.ensureStageHistory(leadId, toStage);
-        return { ok: true };
-    }
-    async moveToBoardColumn(leadId, columnKey) {
-        await this.prisma.lead.update({
-            where: { id: leadId },
-            data: { boardColumnKey: columnKey, stageUpdatedAt: new Date() },
-        });
-        return { ok: true };
     }
     buildRangeOr(from, to) {
         const r = toRange(from, to);
@@ -433,7 +381,6 @@ let ProspectsService = class ProspectsService {
                 });
             }
             catch { }
-            await this.ensureStageHistory(id, 'WON');
             return { ok: true, lead: updated };
         }
         const updated = await this.prisma.lead.update({
@@ -457,7 +404,6 @@ let ProspectsService = class ProspectsService {
             }
             catch { }
         }
-        await this.ensureStageHistory(id, target);
         return { ok: true, lead: updated };
     }
     async getOne(id) {
@@ -551,7 +497,6 @@ let ProspectsService = class ProspectsService {
             });
         }
         catch { }
-        await this.ensureStageHistory(lead.id, 'LEADS_RECEIVED', lead.createdAt);
         return { ok: true, lead };
     }
     async listActors() {
@@ -610,11 +555,14 @@ let ProspectsService = class ProspectsService {
     }
     async importCsv(buffer) {
         const text = buffer.toString('utf8');
-        const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter(l => l.trim().length > 0);
+        const lines = text
+            .replace(/^\uFEFF/, '')
+            .split(/\r?\n/)
+            .filter((l) => l.trim().length > 0);
         if (lines.length === 0)
             throw new common_1.BadRequestException('CSV vide');
-        const header = lines[0].split(',').map(h => h.trim());
-        const idx = (name) => header.findIndex(h => h.toLowerCase() === name.toLowerCase());
+        const header = lines[0].split(',').map((h) => h.trim());
+        const idx = (name) => header.findIndex((h) => h.toLowerCase() === name.toLowerCase());
         const col = {
             firstName: idx('firstName'),
             lastName: idx('lastName'),
@@ -646,9 +594,13 @@ let ProspectsService = class ProspectsService {
                 const closerEmail = (parts[col.closerEmail] || '').trim();
                 const stage = this.safeStage(stageInput);
                 const setter = setterEmail &&
-                    (await this.prisma.user.findFirst({ where: { email: setterEmail, role: 'SETTER' } }));
+                    (await this.prisma.user.findFirst({
+                        where: { email: setterEmail, role: 'SETTER' },
+                    }));
                 const closer = closerEmail &&
-                    (await this.prisma.user.findFirst({ where: { email: closerEmail, role: 'CLOSER' } }));
+                    (await this.prisma.user.findFirst({
+                        where: { email: closerEmail, role: 'CLOSER' },
+                    }));
                 if (email) {
                     const existing = await this.prisma.lead.findUnique({ where: { email } });
                     if (existing) {
@@ -661,14 +613,13 @@ let ProspectsService = class ProspectsService {
                                 tag,
                                 source,
                                 opportunityValue,
-                                saleValue: stage === 'WON' ? (opportunityValue ?? 0) : undefined,
+                                saleValue: stage === 'WON' ? opportunityValue ?? 0 : undefined,
                                 stage,
                                 setterId: setter ? setter.id : undefined,
                                 closerId: closer ? closer.id : undefined,
                                 stageUpdatedAt: new Date(),
                             },
                         });
-                        await this.ensureStageHistory(existing.id, stage);
                         results.updated++;
                     }
                     else {
@@ -681,7 +632,7 @@ let ProspectsService = class ProspectsService {
                                 tag,
                                 source,
                                 opportunityValue,
-                                saleValue: stage === 'WON' ? (opportunityValue ?? 0) : undefined,
+                                saleValue: stage === 'WON' ? opportunityValue ?? 0 : undefined,
                                 stage,
                                 setterId: setter ? setter.id : undefined,
                                 closerId: closer ? closer.id : undefined,
@@ -689,11 +640,15 @@ let ProspectsService = class ProspectsService {
                         });
                         try {
                             await this.prisma.leadEvent?.create?.({
-                                data: { leadId: created.id, type: 'LEAD_CREATED', occurredAt: created.createdAt, meta: { source: 'importCsv' } },
+                                data: {
+                                    leadId: created.id,
+                                    type: 'LEAD_CREATED',
+                                    occurredAt: created.createdAt,
+                                    meta: { source: 'importCsv' },
+                                },
                             });
                         }
                         catch { }
-                        await this.ensureStageHistory(created.id, stage);
                         results.created++;
                     }
                 }
@@ -706,7 +661,7 @@ let ProspectsService = class ProspectsService {
                             tag,
                             source,
                             opportunityValue,
-                            saleValue: stage === 'WON' ? (opportunityValue ?? 0) : undefined,
+                            saleValue: stage === 'WON' ? opportunityValue ?? 0 : undefined,
                             stage,
                             setterId: setter ? setter.id : undefined,
                             closerId: closer ? closer.id : undefined,
@@ -714,11 +669,15 @@ let ProspectsService = class ProspectsService {
                     });
                     try {
                         await this.prisma.leadEvent?.create?.({
-                            data: { leadId: created.id, type: 'LEAD_CREATED', occurredAt: created.createdAt, meta: { source: 'importCsv' } },
+                            data: {
+                                leadId: created.id,
+                                type: 'LEAD_CREATED',
+                                occurredAt: created.createdAt,
+                                meta: { source: 'importCsv' },
+                            },
                         });
                     }
                     catch { }
-                    await this.ensureStageHistory(created.id, stage);
                     results.created++;
                 }
             }
@@ -843,30 +802,70 @@ let ProspectsService = class ProspectsService {
         })));
         return this.getMetricsConfig();
     }
-    async addEvent(leadId, body) {
-        const occurredAt = body.occurredAt ? new Date(body.occurredAt) : new Date();
-        const meta = { ...body, source: 'api' };
-        const ev = await this.prisma.leadEvent?.create?.({
-            data: { leadId, type: body.type, occurredAt, meta },
-        });
-        if (body.type === 'STAGE_ENTERED' && body.stage) {
-            const lead = await this.prisma.lead.findUnique({ where: { id: leadId } });
-            if (!lead)
-                throw new common_1.NotFoundException('Lead introuvable');
-            const stageDto = typeof body.stage === 'string' ? ((0, create_prospect_event_dto_1.normalizeStage)(body.stage) || body.stage) : body.stage;
-            if (!stageDto)
-                throw new common_1.BadRequestException('Stage invalide');
-            const toStage = mapStageDtoToLeadStage(stageDto);
-            await this.updateLeadStage(leadId, toStage, 'api');
+    async addEvent(leadId, dto) {
+        const lead = await this.prisma.lead.findUnique({ where: { id: leadId } });
+        if (!lead)
+            throw new common_1.NotFoundException('Lead introuvable');
+        if (dto.type === 'NOTE') {
+            return { ok: true };
         }
-        return { ok: true, event: ev ?? null };
+        if (dto.type !== 'STAGE_ENTERED') {
+            return { ok: true };
+        }
+        const normalized = dto.stage ?? (0, create_prospect_event_dto_1.normalizeStage)(dto.status);
+        if (!normalized) {
+            throw new common_1.BadRequestException('Stage manquant ou invalide');
+        }
+        const stageMap = {
+            [create_prospect_event_dto_1.StageDto.LEAD_RECU]: 'LEADS_RECEIVED',
+            [create_prospect_event_dto_1.StageDto.DEMANDE_APPEL]: 'CALL_REQUESTED',
+            [create_prospect_event_dto_1.StageDto.APPEL_PASSE]: 'CALL_ATTEMPT',
+            [create_prospect_event_dto_1.StageDto.APPEL_REPONDU]: 'CALL_ANSWERED',
+            [create_prospect_event_dto_1.StageDto.NO_SHOW_SETTER]: 'SETTER_NO_SHOW',
+            [create_prospect_event_dto_1.StageDto.RV0_PLANIFIE]: 'RV0_PLANNED',
+            [create_prospect_event_dto_1.StageDto.RV0_HONORE]: 'RV0_HONORED',
+            [create_prospect_event_dto_1.StageDto.RV0_NO_SHOW]: 'RV0_NO_SHOW',
+            [create_prospect_event_dto_1.StageDto.RV1_PLANIFIE]: 'RV1_PLANNED',
+            [create_prospect_event_dto_1.StageDto.RV1_HONORE]: 'RV1_HONORED',
+            [create_prospect_event_dto_1.StageDto.RV1_NO_SHOW]: 'RV1_NO_SHOW',
+            [create_prospect_event_dto_1.StageDto.RV2_PLANIFIE]: 'RV2_PLANNED',
+            [create_prospect_event_dto_1.StageDto.RV2_HONORE]: 'RV2_HONORED',
+            [create_prospect_event_dto_1.StageDto.WON]: 'WON',
+            [create_prospect_event_dto_1.StageDto.LOST]: 'LOST',
+            [create_prospect_event_dto_1.StageDto.NOT_QUALIFIED]: 'NOT_QUALIFIED',
+        };
+        const toStage = stageMap[normalized];
+        if (!toStage) {
+            throw new common_1.BadRequestException('Stage inconnu');
+        }
+        const occurredAt = dto.occurredAt ? new Date(dto.occurredAt) : new Date();
+        try {
+            await this.prisma.stageEvent.create({
+                data: {
+                    leadId,
+                    fromStage: lead.stage,
+                    toStage,
+                    occurredAt,
+                    source: 'prospects-board',
+                    externalId: null,
+                },
+            });
+        }
+        catch (e) {
+        }
+        await this.prisma.lead.update({
+            where: { id: leadId },
+            data: {
+                stage: toStage,
+                stageUpdatedAt: occurredAt,
+            },
+        });
+        return { ok: true };
     }
 };
 exports.ProspectsService = ProspectsService;
 exports.ProspectsService = ProspectsService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
-        reporting_service_1.ReportingService,
-        stage_events_service_1.StageEventsService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
 ], ProspectsService);
 //# sourceMappingURL=prospects.service.js.map

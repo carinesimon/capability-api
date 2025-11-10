@@ -20,65 +20,54 @@ let ReportingController = class ReportingController {
     constructor(reporting) {
         this.reporting = reporting;
     }
-    summary(from, to) {
+    async getSummary(from, to) {
         return this.reporting.summary(from, to);
     }
-    leadsReceived(from, to) {
+    async getLeadsReceived(from, to) {
         return this.reporting.leadsReceived(from, to);
     }
-    salesWeekly(from, to) {
+    async getSalesWeekly(from, to) {
         return this.reporting.salesWeekly(from, to);
     }
-    setters(from, to) {
+    async getSetters(from, to) {
         return this.reporting.settersReport(from, to);
     }
-    closers(from, to) {
+    async getClosers(from, to) {
         return this.reporting.closersReport(from, to);
     }
-    async duos(from, to, top) {
-        const n = Math.max(1, Math.min(50, Number(top) || 10));
-        return this.reporting.duosReport(from, to, n);
+    async getDuos(from, to) {
+        return this.reporting.duosReport(from, to);
     }
-    pipelineMetrics(keysCsv, from, to, mode = 'entered') {
-        const keys = (keysCsv || '').split(',').map(s => s.trim()).filter(Boolean);
-        return this.reporting.pipelineMetrics({ keys, from, to, mode });
+    async getWeeklyOps(from, to) {
+        const rows = await this.reporting.weeklySeries(from, to);
+        return { ok: true, rows };
     }
-    pipelineStageTotals(from, to) {
-        return this.reporting.pipelineStageTotals(from, to);
+    async drillLeads(from, to, limitStr) {
+        const limit = Number(limitStr ?? 2000);
+        return this.reporting.drillLeadsReceived({ from, to, limit });
     }
-    weeklyOps(from, to) {
-        return this.reporting.weeklySeries(from, to).then(rows => ({ ok: true, rows }));
+    async drillWon(from, to, limitStr) {
+        const limit = Number(limitStr ?? 2000);
+        return this.reporting.drillWon({ from, to, limit });
     }
-    metricCallRequests(from, to) {
-        return this.reporting.metricCallRequests(from, to);
+    async drillAppointments(from, to, type, status, userId, limitStr) {
+        const limit = Number(limitStr ?? 2000);
+        return this.reporting.drillAppointments({ from, to, type, status, userId, limit });
     }
-    metricCalls(from, to) {
-        return this.reporting.metricCalls(from, to);
+    async drillCallRequests(from, to, limitStr) {
+        const limit = Number(limitStr ?? 2000);
+        return this.reporting.drillCallRequests({ from, to, limit });
     }
-    metricCallsAnswered(from, to) {
-        return this.reporting.metricCallsAnswered(from, to);
-    }
-    funnel(from, to) {
-        return this.reporting.funnel(from, to);
-    }
-    drillAppointments(from, to, type, status, userId, limit = '2000') {
-        return this.reporting.drillAppointments({ from, to, type, status, userId, limit: Number(limit) });
-    }
-    drillWon(from, to, limit = '2000') {
-        return this.reporting.drillWon({ from, to, limit: Number(limit) });
-    }
-    drillLeadsReceived(from, to, limit = '2000') {
-        return this.reporting.drillLeadsReceived({ from, to, limit: Number(limit) });
-    }
-    drillCallRequests(from, to, limit = '2000') {
-        return this.reporting.drillCallRequests({ from, to, limit: Number(limit) });
-    }
-    drillCalls(from, to, answered, setterNoShow, limit = '2000') {
+    async drillCalls(from, to, answeredStr, setterNoShowStr, limitStr) {
+        const answered = answeredStr === '1' || answeredStr === 'true';
+        const setterNoShow = setterNoShowStr === '1' || setterNoShowStr === 'true';
+        const limit = Number(limitStr ?? 2000);
         return this.reporting.drillCalls({
-            from, to,
-            answered: answered ? Boolean(Number(answered)) : false,
-            setterNoShow: setterNoShow ? Boolean(Number(setterNoShow)) : false,
-            limit: Number(limit),
+            from,
+            to,
+            answered,
+            setterNoShow,
+            limit,
         });
     }
 };
@@ -89,107 +78,74 @@ __decorate([
     __param(1, (0, common_1.Query)('to')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, String]),
-    __metadata("design:returntype", void 0)
-], ReportingController.prototype, "summary", null);
+    __metadata("design:returntype", Promise)
+], ReportingController.prototype, "getSummary", null);
 __decorate([
     (0, common_1.Get)('leads-received'),
     __param(0, (0, common_1.Query)('from')),
     __param(1, (0, common_1.Query)('to')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, String]),
-    __metadata("design:returntype", void 0)
-], ReportingController.prototype, "leadsReceived", null);
+    __metadata("design:returntype", Promise)
+], ReportingController.prototype, "getLeadsReceived", null);
 __decorate([
     (0, common_1.Get)('sales-weekly'),
     __param(0, (0, common_1.Query)('from')),
     __param(1, (0, common_1.Query)('to')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, String]),
-    __metadata("design:returntype", void 0)
-], ReportingController.prototype, "salesWeekly", null);
+    __metadata("design:returntype", Promise)
+], ReportingController.prototype, "getSalesWeekly", null);
 __decorate([
     (0, common_1.Get)('setters'),
     __param(0, (0, common_1.Query)('from')),
     __param(1, (0, common_1.Query)('to')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, String]),
-    __metadata("design:returntype", void 0)
-], ReportingController.prototype, "setters", null);
+    __metadata("design:returntype", Promise)
+], ReportingController.prototype, "getSetters", null);
 __decorate([
     (0, common_1.Get)('closers'),
     __param(0, (0, common_1.Query)('from')),
     __param(1, (0, common_1.Query)('to')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, String]),
-    __metadata("design:returntype", void 0)
-], ReportingController.prototype, "closers", null);
+    __metadata("design:returntype", Promise)
+], ReportingController.prototype, "getClosers", null);
 __decorate([
     (0, common_1.Get)('duos'),
     __param(0, (0, common_1.Query)('from')),
     __param(1, (0, common_1.Query)('to')),
-    __param(2, (0, common_1.Query)('top')),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String]),
-    __metadata("design:returntype", Promise)
-], ReportingController.prototype, "duos", null);
-__decorate([
-    (0, common_1.Get)('pipeline-metrics'),
-    __param(0, (0, common_1.Query)('keys')),
-    __param(1, (0, common_1.Query)('from')),
-    __param(2, (0, common_1.Query)('to')),
-    __param(3, (0, common_1.Query)('mode')),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String, String]),
-    __metadata("design:returntype", void 0)
-], ReportingController.prototype, "pipelineMetrics", null);
-__decorate([
-    (0, common_1.Get)('pipeline-stage-totals'),
-    __param(0, (0, common_1.Query)('from')),
-    __param(1, (0, common_1.Query)('to')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, String]),
-    __metadata("design:returntype", void 0)
-], ReportingController.prototype, "pipelineStageTotals", null);
+    __metadata("design:returntype", Promise)
+], ReportingController.prototype, "getDuos", null);
 __decorate([
     (0, common_1.Get)('weekly-ops'),
     __param(0, (0, common_1.Query)('from')),
     __param(1, (0, common_1.Query)('to')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, String]),
-    __metadata("design:returntype", void 0)
-], ReportingController.prototype, "weeklyOps", null);
+    __metadata("design:returntype", Promise)
+], ReportingController.prototype, "getWeeklyOps", null);
 __decorate([
-    (0, common_1.Get)('metric/call-requests'),
+    (0, common_1.Get)('drill/leads-received'),
     __param(0, (0, common_1.Query)('from')),
     __param(1, (0, common_1.Query)('to')),
+    __param(2, (0, common_1.Query)('limit')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String]),
-    __metadata("design:returntype", void 0)
-], ReportingController.prototype, "metricCallRequests", null);
+    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:returntype", Promise)
+], ReportingController.prototype, "drillLeads", null);
 __decorate([
-    (0, common_1.Get)('metric/calls'),
+    (0, common_1.Get)('drill/won'),
     __param(0, (0, common_1.Query)('from')),
     __param(1, (0, common_1.Query)('to')),
+    __param(2, (0, common_1.Query)('limit')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String]),
-    __metadata("design:returntype", void 0)
-], ReportingController.prototype, "metricCalls", null);
-__decorate([
-    (0, common_1.Get)('metric/calls-answered'),
-    __param(0, (0, common_1.Query)('from')),
-    __param(1, (0, common_1.Query)('to')),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String]),
-    __metadata("design:returntype", void 0)
-], ReportingController.prototype, "metricCallsAnswered", null);
-__decorate([
-    (0, common_1.Get)('funnel'),
-    __param(0, (0, common_1.Query)('from')),
-    __param(1, (0, common_1.Query)('to')),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String]),
-    __metadata("design:returntype", void 0)
-], ReportingController.prototype, "funnel", null);
+    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:returntype", Promise)
+], ReportingController.prototype, "drillWon", null);
 __decorate([
     (0, common_1.Get)('drill/appointments'),
     __param(0, (0, common_1.Query)('from')),
@@ -199,35 +155,17 @@ __decorate([
     __param(4, (0, common_1.Query)('userId')),
     __param(5, (0, common_1.Query)('limit')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String, String, String, Object]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:paramtypes", [String, String, String, String, String, String]),
+    __metadata("design:returntype", Promise)
 ], ReportingController.prototype, "drillAppointments", null);
-__decorate([
-    (0, common_1.Get)('drill/won'),
-    __param(0, (0, common_1.Query)('from')),
-    __param(1, (0, common_1.Query)('to')),
-    __param(2, (0, common_1.Query)('limit')),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, Object]),
-    __metadata("design:returntype", void 0)
-], ReportingController.prototype, "drillWon", null);
-__decorate([
-    (0, common_1.Get)('drill/leads-received'),
-    __param(0, (0, common_1.Query)('from')),
-    __param(1, (0, common_1.Query)('to')),
-    __param(2, (0, common_1.Query)('limit')),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, Object]),
-    __metadata("design:returntype", void 0)
-], ReportingController.prototype, "drillLeadsReceived", null);
 __decorate([
     (0, common_1.Get)('drill/call-requests'),
     __param(0, (0, common_1.Query)('from')),
     __param(1, (0, common_1.Query)('to')),
     __param(2, (0, common_1.Query)('limit')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, Object]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:returntype", Promise)
 ], ReportingController.prototype, "drillCallRequests", null);
 __decorate([
     (0, common_1.Get)('drill/calls'),
@@ -237,8 +175,8 @@ __decorate([
     __param(3, (0, common_1.Query)('setterNoShow')),
     __param(4, (0, common_1.Query)('limit')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String, String, Object]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:paramtypes", [String, String, String, String, String]),
+    __metadata("design:returntype", Promise)
 ], ReportingController.prototype, "drillCalls", null);
 exports.ReportingController = ReportingController = __decorate([
     (0, common_1.Controller)('reporting'),

@@ -60,42 +60,6 @@ function intersectWindow(aStart, aEnd, bStart, bEnd) {
     const e = new Date(Math.min(aEnd.getTime(), (bEnd ?? aEnd).getTime()));
     return s > e ? null : { start: s, end: e };
 }
-const HISTORY_ALIASES = {
-    LEADS_RECEIVED: [
-        'LEADS_RECEIVED',
-        'LEAD_RECU',
-        'LEAD_REÇU',
-        'LEADS_RECU',
-        'CONTACT_CREE',
-        'CONTACT_CRÉÉ',
-        'CONTACTS_CREES',
-        'CONTACTS_CRÉÉS',
-    ],
-    CALL_REQUESTED: ['CALL_REQUESTED', 'DEMANDE_APPEL', 'INTENT_RDV', 'REQUESTED_CALL'],
-    CALL_ATTEMPT: ['CALL_ATTEMPT', 'APPEL_PASSE', 'CALL_MADE', 'CALLS', 'APPELS'],
-    CALL_ANSWERED: ['CALL_ANSWERED', 'APPEL_REPONDU', 'APPEL_RÉPONDU', 'ANSWERED', 'CONTACTED'],
-    SETTER_NO_SHOW: ['SETTER_NO_SHOW', 'NO_SHOW_SETTER'],
-    FOLLOW_UP: ['FOLLOW_UP', 'RELANCE'],
-    RV0_PLANNED: ['RV0_PLANNED', 'RV0_PLANIFIE', 'RV0_PLANIFIÉ', 'RDV0_PLANIFIE'],
-    RV0_HONORED: ['RV0_HONORED', 'RV0_HONORE', 'RV0_HONORÉ', 'RDV0_HONORE'],
-    RV0_NO_SHOW: ['RV0_NO_SHOW', 'NO_SHOW_RV0', 'RDV0_NO_SHOW'],
-    RV1_PLANNED: ['RV1_PLANNED', 'RV1_PLANIFIE', 'RV1_PLANIFIÉ', 'RDV1_PLANIFIE'],
-    RV1_HONORED: ['RV1_HONORED', 'RV1_HONORE', 'RV1_HONORÉ', 'RDV1_HONORE'],
-    RV1_NO_SHOW: ['RV1_NO_SHOW', 'NO_SHOW_RV1', 'RDV1_NO_SHOW'],
-    RV2_PLANNED: ['RV2_PLANNED', 'RV2_PLANIFIE', 'RV2_PLANIFIÉ', 'RDV2_PLANIFIE'],
-    RV2_HONORED: ['RV2_HONORED', 'RV2_HONORE', 'RV2_HONORÉ', 'RDV2_HONORE'],
-    NOT_QUALIFIED: ['NOT_QUALIFIED', 'NON_QUALIFIE', 'NON_QUALIFIÉ', 'NQ'],
-    LOST: ['LOST', 'PERDU', 'CLOSED_LOST'],
-    WON: ['WON', 'CLOSED_WON'],
-};
-function normalizeToken(s) {
-    return s
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toUpperCase()
-        .replace(/[^A-Z0-9]+/g, '_')
-        .replace(/^_+|_+$/g, '');
-}
 let ReportingService = class ReportingService {
     prisma;
     constructor(prisma) {
@@ -161,57 +125,6 @@ let ReportingService = class ReportingService {
         }
         return { total: num(total), byDay: days.length ? days : undefined };
     }
-    variantsFor(canonical) {
-        const base = canonical.toUpperCase();
-        const aliases = HISTORY_ALIASES[base] || [];
-        const more = aliases.map(normalizeToken);
-        return Array.from(new Set([base, ...aliases, ...more]));
-    }
-    historyWhere(canonical, r) {
-        const stages = this.variantsFor(canonical);
-        const where = { stage: { in: stages } };
-        if (r && (r.from || r.to)) {
-            where.occurredAt = { gte: r.from ?? undefined, lte: r.to ?? undefined };
-        }
-        return where;
-    }
-    async countHistory(canonical, r) {
-        const where = this.historyWhere(canonical, r);
-        return await this.prisma.leadStageHistory.count({ where });
-    }
-    async perDayFromHistory(canonical, from, to) {
-        const r = toRange(from, to);
-        if (!r.from || !r.to) {
-            const total = await this.countHistory(canonical, r);
-            return { total, byDay: [] };
-        }
-        const days = [];
-        let total = 0;
-        const start = new Date(r.from);
-        const end = new Date(r.to);
-        const stages = this.variantsFor(canonical);
-        for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
-            const d0 = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
-            const d1 = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getDate(), 23, 59, 59, 999));
-            const n = await this.prisma.leadStageHistory.count({
-                where: {
-                    stage: { in: stages },
-                    occurredAt: { gte: d0, lte: d1 },
-                },
-            });
-            total += num(n);
-            days.push({ day: d0.toISOString(), count: num(n) });
-        }
-        return { total, byDay: days };
-    }
-    async countHistoryMany(canonicals, r) {
-        const variants = canonicals.flatMap((c) => this.variantsFor(c));
-        const where = { stage: { in: variants } };
-        if (r.from || r.to) {
-            where.occurredAt = { gte: r.from ?? undefined, lte: r.to ?? undefined };
-        }
-        return await this.prisma.leadStageHistory.count({ where });
-    }
     async salesWeekly(from, to) {
         const r = toRange(from, to);
         const start = mondayOfUTC(r.from ?? new Date());
@@ -249,48 +162,50 @@ let ReportingService = class ReportingService {
             select: { id: true, setterId: true, createdAt: true },
         });
         const totalLeads = allLeads.length;
-        const rv0PlannedEvents = await this.prisma.leadEvent.findMany({
-            where: { type: 'RV0_PLANNED', ...between('occurredAt', r) },
-            select: { leadId: true },
+        const rv1Events = await this.prisma.stageEvent.findMany({
+            where: {
+                toStage: client_1.LeadStage.RV1_HONORED,
+                ...between('occurredAt', r),
+            },
+            select: {
+                leadId: true,
+                lead: {
+                    select: { setterId: true },
+                },
+            },
         });
-        const rv0LeadIds = rv0PlannedEvents.map((e) => e.leadId).filter(Boolean);
-        const rv0Leads = rv0LeadIds.length
-            ? await this.prisma.lead.findMany({
-                where: { id: { in: rv0LeadIds } },
-                select: { id: true, setterId: true },
-            })
-            : [];
-        const setterByLead = new Map(rv0Leads.map((l) => [l.id, l.setterId || 'UNASSIGNED']));
-        const rv0PlannedBySetter = new Map();
-        for (const e of rv0PlannedEvents) {
-            const sid = setterByLead.get(e.leadId) || 'UNASSIGNED';
-            rv0PlannedBySetter.set(sid, (rv0PlannedBySetter.get(sid) || 0) + 1);
-        }
-        const rv1HonoredBySetter = new Map();
-        {
-            const evs = await this.prisma.leadEvent.findMany({
-                where: { type: 'RV1_HONORED', ...between('occurredAt', r) },
-                select: { lead: { select: { setterId: true } } },
-            });
-            for (const ev of evs) {
-                const sid = ev.lead?.setterId || 'UNASSIGNED';
-                rv1HonoredBySetter.set(sid, (rv1HonoredBySetter.get(sid) || 0) + 1);
+        const rv1FromHisLeadsBySetter = new Map();
+        for (const ev of rv1Events) {
+            if (!ev.lead || !ev.lead.setterId || !ev.leadId)
+                continue;
+            const sId = ev.lead.setterId;
+            if (!rv1FromHisLeadsBySetter.has(sId)) {
+                rv1FromHisLeadsBySetter.set(sId, new Set());
             }
+            rv1FromHisLeadsBySetter.get(sId).add(ev.leadId);
         }
         const reqEvents = await this.prisma.leadEvent.findMany({
-            where: { type: 'CALL_REQUESTED', ...between('occurredAt', r) },
+            where: {
+                type: 'CALL_REQUESTED',
+                ...between('occurredAt', r),
+            },
             orderBy: { occurredAt: 'asc' },
             select: { leadId: true, occurredAt: true },
         });
         const firstReqByLead = new Map();
         for (const ev of reqEvents) {
-            if (ev.leadId && !firstReqByLead.has(ev.leadId))
+            if (!ev.leadId)
+                continue;
+            if (!firstReqByLead.has(ev.leadId))
                 firstReqByLead.set(ev.leadId, ev.occurredAt);
         }
         const leadsWithRequest = Array.from(firstReqByLead.keys());
         const attemptEvents = leadsWithRequest.length
             ? await this.prisma.leadEvent.findMany({
-                where: { type: 'CALL_ATTEMPT', leadId: { in: leadsWithRequest } },
+                where: {
+                    type: 'CALL_ATTEMPT',
+                    leadId: { in: leadsWithRequest },
+                },
                 orderBy: { occurredAt: 'asc' },
                 select: { leadId: true, occurredAt: true },
             })
@@ -306,8 +221,9 @@ let ReportingService = class ReportingService {
                 continue;
             if (r.to && ev.occurredAt > r.to)
                 continue;
-            if (!firstAttemptEventByLead.has(ev.leadId))
+            if (!firstAttemptEventByLead.has(ev.leadId)) {
                 firstAttemptEventByLead.set(ev.leadId, ev.occurredAt);
+            }
         }
         const ttfcBySetter = {};
         const isSetter = (userId) => setterIds.has(userId);
@@ -318,7 +234,10 @@ let ReportingService = class ReportingService {
                 continue;
             const endWindow = new Date(attemptEventAt.getTime() + 5 * 60 * 1000);
             const ca = await this.prisma.callAttempt.findFirst({
-                where: { leadId, startedAt: { gte: requestAt, lte: endWindow } },
+                where: {
+                    leadId,
+                    startedAt: { gte: requestAt, lte: endWindow },
+                },
                 orderBy: { startedAt: 'asc' },
                 select: { userId: true, startedAt: true },
             });
@@ -326,7 +245,10 @@ let ReportingService = class ReportingService {
             if (ca?.userId && isSetter(ca.userId))
                 ownerSetterId = ca.userId;
             if (!ownerSetterId) {
-                const l = await this.prisma.lead.findUnique({ where: { id: leadId }, select: { setterId: true } });
+                const l = await this.prisma.lead.findUnique({
+                    where: { id: leadId },
+                    select: { setterId: true },
+                });
                 if (l?.setterId && isSetter(l.setterId))
                     ownerSetterId = l.setterId;
             }
@@ -345,20 +267,25 @@ let ReportingService = class ReportingService {
             const leads = allLeads.filter((l) => l.setterId === s.id);
             const leadIds = leads.map((l) => l.id);
             const leadsReceived = leadIds.length;
-            const rv0Count = rv0PlannedBySetter.get(s.id) || 0;
-            const rv1FromHisLeads = rv1HonoredBySetter.get(s.id) || 0;
+            const rv0Count = await this.prisma.appointment.count({
+                where: { userId: s.id, type: client_1.AppointmentType.RV0, ...between('scheduledAt', r) },
+            });
+            const rv1Set = rv1FromHisLeadsBySetter.get(s.id);
+            const rv1FromHisLeads = rv1Set ? rv1Set.size : 0;
             const ttfcAgg = ttfcBySetter[s.id];
             const ttfcAvgMinutes = ttfcAgg?.n ? Math.round(ttfcAgg.sum / ttfcAgg.n) : null;
             const wonWhere = await this.wonFilter(r);
             wonWhere.setterId = s.id;
             const wonAgg = await this.prisma.lead.aggregate({
                 _sum: { saleValue: true },
-                _count: { _all: true },
                 where: wonWhere,
             });
             const revenueFromHisLeads = num(wonAgg._sum?.saleValue ?? 0);
-            const salesFromHisLeads = num(wonAgg._count?._all ?? 0);
-            const spendShare = totalLeads && leadsReceived ? spend * (leadsReceived / totalLeads) : leadsReceived ? spend : 0;
+            const spendShare = totalLeads && leadsReceived
+                ? spend * (leadsReceived / totalLeads)
+                : leadsReceived
+                    ? spend
+                    : 0;
             const cpl = leadsReceived ? Number((spendShare / leadsReceived).toFixed(2)) : null;
             const cpRv0 = rv0Count ? Number((spendShare / rv0Count).toFixed(2)) : null;
             const cpRv1 = rv1FromHisLeads ? Number((spendShare / rv1FromHisLeads).toFixed(2)) : null;
@@ -381,106 +308,9 @@ let ReportingService = class ReportingService {
                 cpRv0,
                 cpRv1,
                 roas,
-                salesFromHisLeads,
             });
         }
         return rows;
-    }
-    async duosReport(from, to, top = 10) {
-        const r = toRange(from, to);
-        const baseWon = await this.wonFilter(r);
-        const whereWon = {
-            ...baseWon,
-            setterId: { not: null },
-            closerId: { not: null },
-        };
-        const groups = await this.prisma.lead.groupBy({
-            by: ['setterId', 'closerId'],
-            where: whereWon,
-            _sum: { saleValue: true },
-            _count: { _all: true },
-            orderBy: { _sum: { saleValue: 'desc' } },
-        });
-        if (!groups.length)
-            return [];
-        const userIds = Array.from(new Set(groups.flatMap((g) => [g.setterId, g.closerId])));
-        const users = await this.prisma.user.findMany({
-            where: { id: { in: userIds } },
-            select: { id: true, firstName: true, email: true },
-        });
-        const uById = new Map(users.map((u) => [u.id, u]));
-        const rows = [];
-        for (const g of groups) {
-            const setter = uById.get(g.setterId) || { firstName: '—', email: '—' };
-            const closer = uById.get(g.closerId) || { firstName: '—', email: '—' };
-            const wonLeads = await this.prisma.lead.findMany({
-                where: {
-                    ...whereWon,
-                    setterId: g.setterId,
-                    closerId: g.closerId,
-                },
-                select: { id: true },
-            });
-            const wonLeadIds = wonLeads.map((l) => l.id);
-            let rv1Planned = 0;
-            let rv1Honored = 0;
-            if (wonLeadIds.length) {
-                rv1Planned = await this.prisma.appointment.count({
-                    where: {
-                        type: client_1.AppointmentType.RV1,
-                        leadId: { in: wonLeadIds },
-                        ...between('scheduledAt', toRange(from, to)),
-                    },
-                });
-                rv1Honored = await this.prisma.appointment.count({
-                    where: {
-                        type: client_1.AppointmentType.RV1,
-                        status: client_1.AppointmentStatus.HONORED,
-                        leadId: { in: wonLeadIds },
-                        ...between('scheduledAt', toRange(from, to)),
-                    },
-                });
-            }
-            const salesCount = g._count._all || 0;
-            const revenue = num(g._sum.saleValue ?? 0);
-            const avgDeal = salesCount ? Math.round(revenue / salesCount) : 0;
-            const rv1HonorRate = rv1Planned ? Number(((rv1Honored / rv1Planned) * 100).toFixed(1)) : null;
-            rows.push({
-                setterId: g.setterId,
-                setterName: setter.firstName,
-                setterEmail: setter.email,
-                closerId: g.closerId,
-                closerName: closer.firstName,
-                closerEmail: closer.email,
-                salesCount,
-                revenue,
-                avgDeal,
-                rv1Planned,
-                rv1Honored,
-                rv1HonorRate,
-            });
-        }
-        rows.sort((a, b) => (b.revenue !== a.revenue ? b.revenue - a.revenue : b.salesCount - a.salesCount));
-        return rows.slice(0, top);
-    }
-    async pipelineStageTotals(from, to) {
-        const r = toRange(from, to);
-        const where = {};
-        if (r.from || r.to) {
-            where.occurredAt = { gte: r.from ?? undefined, lte: r.to ?? undefined };
-        }
-        const rows = await this.prisma.leadStageHistory.groupBy({
-            by: ['stage'],
-            where,
-            _count: { _all: true },
-        });
-        return {
-            ok: true,
-            stages: rows.map((r0) => ({
-                stage: r0.stage,
-                count: r0._count._all,
-            })),
-        };
     }
     async closersReport(from, to) {
         const r = toRange(from, to);
@@ -490,50 +320,43 @@ let ReportingService = class ReportingService {
             orderBy: { firstName: 'asc' },
         });
         const spend = await this.sumSpend(r);
-        const eventToKey = [
-            { type: 'RV1_PLANNED', bucket: 'rv1Planned' },
-            { type: 'RV1_HONORED', bucket: 'rv1Honored' },
-            { type: 'RV1_NO_SHOW', bucket: 'rv1NoShow' },
-        ];
-        const maps = {
-            rv1Planned: new Map(),
-            rv1Honored: new Map(),
-            rv1NoShow: new Map(),
-        };
-        const eventsByType = {
-            rv1Planned: [],
-            rv1Honored: [],
-            rv1NoShow: [],
-        };
-        for (const { type, bucket } of eventToKey) {
-            const evs = await this.prisma.leadEvent.findMany({
-                where: { type, ...between('occurredAt', r) },
-                select: { leadId: true },
-            });
-            eventsByType[bucket] = evs.filter((e) => !!e.leadId);
-        }
-        const allLeadIds = Array.from(new Set([].concat(eventsByType.rv1Planned.map((e) => e.leadId), eventsByType.rv1Honored.map((e) => e.leadId), eventsByType.rv1NoShow.map((e) => e.leadId))));
-        const leadCloserMap = new Map();
-        if (allLeadIds.length) {
-            const leads = await this.prisma.lead.findMany({
-                where: { id: { in: allLeadIds } },
-                select: { id: true, closerId: true },
-            });
-            for (const l of leads) {
-                leadCloserMap.set(l.id, l.closerId || 'UNASSIGNED');
+        const rv1Events = await this.prisma.stageEvent.findMany({
+            where: {
+                toStage: client_1.LeadStage.RV1_HONORED,
+                ...between('occurredAt', r),
+            },
+            select: {
+                leadId: true,
+                lead: {
+                    select: { closerId: true },
+                },
+            },
+        });
+        const rv1HonoredByCloser = new Map();
+        for (const ev of rv1Events) {
+            if (!ev.lead || !ev.lead.closerId || !ev.leadId)
+                continue;
+            const cId = ev.lead.closerId;
+            if (!rv1HonoredByCloser.has(cId)) {
+                rv1HonoredByCloser.set(cId, new Set());
             }
-        }
-        for (const bucket of ['rv1Planned', 'rv1Honored', 'rv1NoShow']) {
-            for (const e of eventsByType[bucket]) {
-                const cid = leadCloserMap.get(e.leadId) || 'UNASSIGNED';
-                maps[bucket].set(cid, (maps[bucket].get(cid) || 0) + 1);
-            }
+            rv1HonoredByCloser.get(cId).add(ev.leadId);
         }
         const rows = [];
         for (const c of closers) {
-            const rv1Planned = maps.rv1Planned.get(c.id) || 0;
-            const rv1Honored = maps.rv1Honored.get(c.id) || 0;
-            const rv1NoShow = maps.rv1NoShow.get(c.id) || 0;
+            const rv1Planned = await this.prisma.appointment.count({
+                where: { userId: c.id, type: client_1.AppointmentType.RV1, ...between('scheduledAt', r) },
+            });
+            const rv1Set = rv1HonoredByCloser.get(c.id);
+            const rv1Honored = rv1Set ? rv1Set.size : 0;
+            const rv1NoShow = await this.prisma.appointment.count({
+                where: {
+                    userId: c.id,
+                    type: client_1.AppointmentType.RV1,
+                    status: client_1.AppointmentStatus.NO_SHOW,
+                    ...between('scheduledAt', r),
+                },
+            });
             const rv2Planned = await this.prisma.appointment.count({
                 where: { userId: c.id, type: client_1.AppointmentType.RV2, ...between('scheduledAt', r) },
             });
@@ -553,8 +376,12 @@ let ReportingService = class ReportingService {
             });
             const revenueTotal = num(wonAgg._sum?.saleValue ?? 0);
             const salesClosed = await this.prisma.lead.count({ where: wonWhere });
-            const roasPlanned = rv1Planned ? Number(((revenueTotal || 0) / (spend || 1) / rv1Planned).toFixed(2)) : null;
-            const roasHonored = rv1Honored ? Number(((revenueTotal || 0) / (spend || 1) / rv1Honored).toFixed(2)) : null;
+            const roasPlanned = rv1Planned
+                ? Number(((revenueTotal || 0) / (spend || 1) / rv1Planned).toFixed(2))
+                : null;
+            const roasHonored = rv1Honored
+                ? Number(((revenueTotal || 0) / (spend || 1) / rv1Honored).toFixed(2))
+                : null;
             rows.push({
                 userId: c.id,
                 name: c.firstName,
@@ -570,25 +397,82 @@ let ReportingService = class ReportingService {
                 roasHonored,
             });
         }
-        if (maps.rv1Planned.has('UNASSIGNED') ||
-            maps.rv1Honored.has('UNASSIGNED') ||
-            maps.rv1NoShow.has('UNASSIGNED')) {
-            rows.push({
-                userId: 'UNASSIGNED',
-                name: 'Non assigné',
-                email: '',
-                rv1Planned: num(maps.rv1Planned.get('UNASSIGNED') || 0),
-                rv1Honored: num(maps.rv1Honored.get('UNASSIGNED') || 0),
-                rv1NoShow: num(maps.rv1NoShow.get('UNASSIGNED') || 0),
-                rv2Planned: 0,
-                rv2Honored: 0,
-                salesClosed: 0,
-                revenueTotal: 0,
-                roasPlanned: null,
-                roasHonored: null,
-            });
-        }
         return rows;
+    }
+    async duosReport(from, to) {
+        const r = toRange(from, to);
+        const where = await this.wonFilter(r);
+        where.setterId = { not: null };
+        where.closerId = { not: null };
+        const leads = await this.prisma.lead.findMany({
+            where,
+            select: {
+                id: true,
+                saleValue: true,
+                setterId: true,
+                closerId: true,
+                setter: { select: { id: true, firstName: true, email: true } },
+                closer: { select: { id: true, firstName: true, email: true } },
+            },
+        });
+        const map = new Map();
+        for (const L of leads) {
+            if (!L.setterId || !L.closerId || !L.setter || !L.closer)
+                continue;
+            const key = `${L.setterId}::${L.closerId}`;
+            const row = map.get(key) ??
+                {
+                    setterId: L.setterId,
+                    setterName: L.setter.firstName,
+                    setterEmail: L.setter.email,
+                    closerId: L.closerId,
+                    closerName: L.closer.firstName,
+                    closerEmail: L.closer.email,
+                    leadIds: [],
+                    salesCount: 0,
+                    revenue: 0,
+                    rv1Planned: 0,
+                    rv1Honored: 0,
+                };
+            row.leadIds.push(L.id);
+            row.salesCount += 1;
+            row.revenue += num(L.saleValue ?? 0);
+            map.set(key, row);
+        }
+        for (const duo of map.values()) {
+            if (!duo.leadIds.length)
+                continue;
+            const rv1Planned = await this.prisma.appointment.count({
+                where: {
+                    type: client_1.AppointmentType.RV1,
+                    leadId: { in: duo.leadIds },
+                },
+            });
+            const rv1Honored = await this.prisma.appointment.count({
+                where: {
+                    type: client_1.AppointmentType.RV1,
+                    leadId: { in: duo.leadIds },
+                    status: client_1.AppointmentStatus.HONORED,
+                },
+            });
+            duo.rv1Planned = num(rv1Planned);
+            duo.rv1Honored = num(rv1Honored);
+        }
+        const out = Array.from(map.values()).map((d) => ({
+            setterId: d.setterId,
+            setterName: d.setterName,
+            setterEmail: d.setterEmail,
+            closerId: d.closerId,
+            closerName: d.closerName,
+            closerEmail: d.closerEmail,
+            salesCount: d.salesCount,
+            revenue: d.revenue,
+            avgDeal: d.salesCount ? Math.round(d.revenue / d.salesCount) : 0,
+            rv1Planned: d.rv1Planned,
+            rv1Honored: d.rv1Honored,
+            rv1HonorRate: d.rv1Planned ? Math.round((d.rv1Honored / d.rv1Planned) * 100) : null,
+        }));
+        return out.sort((a, b) => b.revenue - a.revenue);
     }
     async summary(from, to) {
         const r = toRange(from, to);
@@ -621,33 +505,60 @@ let ReportingService = class ReportingService {
             },
         };
     }
+    async stageIdsForKeys(keys) {
+        if (!keys?.length)
+            return [];
+        const rows = await this.prisma.stage.findMany({
+            where: { slug: { in: keys }, isActive: true },
+            select: { id: true },
+        });
+        return rows.map(r => r.id);
+    }
+    async countEnteredInStages(keys, r) {
+        if (!keys?.length)
+            return 0;
+        const ids = await this.stageIdsForKeys(keys);
+        const where = {
+            AND: [
+                { OR: [{ stage: { in: keys } }, ...(ids.length ? [{ stageId: { in: ids } }] : [])] },
+                between('stageUpdatedAt', r),
+            ],
+        };
+        return num(await this.prisma.lead.count({ where }));
+    }
+    async countCurrentInStages(keys) {
+        if (!keys?.length)
+            return 0;
+        const ids = await this.stageIdsForKeys(keys);
+        const where = { OR: [{ stage: { in: keys } }, ...(ids.length ? [{ stageId: { in: ids } }] : [])] };
+        return num(await this.prisma.lead.count({ where }));
+    }
     async pipelineMetrics(args) {
         const { keys, from, to, mode = 'entered' } = args;
         const r = toRange(from, to);
+        const unique = Array.from(new Set(keys));
         const out = {};
-        await Promise.all(Array.from(new Set(keys)).map(async (k) => {
-            out[k] = await this.countHistory(k, r);
+        await Promise.all(unique.map(async (k) => {
+            out[k] =
+                mode === 'current'
+                    ? await this.countCurrentInStages([k])
+                    : await this.countEnteredInStages([k], r);
         }));
         return out;
     }
-    async funnelFromHistory(r) {
+    async funnelFromStages(r) {
+        const get = (keys) => this.countEnteredInStages(keys, r);
         const [leadsCreated, callReq, calls, answered, setterNoShow, rv0P, rv0H, rv0NS, rv1P, rv1H, rv1NS, rv2P, rv2H, notQual, lost, wonCount,] = await Promise.all([
             this.prisma.lead.count({ where: between('createdAt', r) }),
-            this.countHistory('CALL_REQUESTED', r),
-            this.countHistory('CALL_ATTEMPT', r),
-            this.countHistory('CALL_ANSWERED', r),
-            this.countHistory('SETTER_NO_SHOW', r),
-            this.countHistory('RV0_PLANNED', r),
-            this.countHistory('RV0_HONORED', r),
-            this.countHistory('RV0_NO_SHOW', r),
-            this.countHistory('RV1_PLANNED', r),
-            this.countHistory('RV1_HONORED', r),
-            this.countHistory('RV1_NO_SHOW', r),
-            this.countHistory('RV2_PLANNED', r),
-            this.countHistory('RV2_HONORED', r),
-            this.countHistory('NOT_QUALIFIED', r),
-            this.countHistory('LOST', r),
-            this.countHistory('WON', r),
+            get(['CALL_REQUESTED']),
+            get(['CALL_ATTEMPT']),
+            get(['CALL_ANSWERED']),
+            get(['SETTER_NO_SHOW']),
+            get(['RV0_PLANNED']), get(['RV0_HONORED']), get(['RV0_NO_SHOW']),
+            get(['RV1_PLANNED']), get(['RV1_HONORED']), get(['RV1_NO_SHOW']),
+            get(['RV2_PLANNED']), get(['RV2_HONORED']),
+            get(['NOT_QUALIFIED']), get(['LOST']),
+            (async () => (await this.wonFilter(r), await this.countEnteredInStages(['WON'], r)))(),
         ]);
         return {
             leads: num(leadsCreated),
@@ -670,7 +581,7 @@ let ReportingService = class ReportingService {
     }
     async funnel(from, to) {
         const r = toRange(from, to);
-        const totals = await this.funnelFromHistory(r);
+        const totals = await this.funnelFromStages(r);
         const start = mondayOfUTC(r.from ?? new Date());
         const end = sundayOfUTC(r.to ?? new Date());
         const weekly = [];
@@ -679,7 +590,7 @@ let ReportingService = class ReportingService {
             const we = sundayOfUTC(d);
             const clip = intersectWindow(ws, we, r.from, r.to);
             const wRange = { from: clip?.start, to: clip?.end };
-            const wTotals = await this.funnelFromHistory(wRange);
+            const wTotals = await this.funnelFromStages(wRange);
             weekly.push({ weekStart: ws.toISOString(), weekEnd: we.toISOString(), ...wTotals });
         }
         return { period: { from, to }, totals, weekly };
@@ -697,31 +608,61 @@ let ReportingService = class ReportingService {
             const row = {
                 weekStart: ws.toISOString(),
                 weekEnd: we.toISOString(),
-                rv0Planned: await this.countHistoryMany(['RV0_PLANNED'], wRange),
-                rv0Honored: await this.countHistoryMany(['RV0_HONORED'], wRange),
-                rv0NoShow: await this.countHistoryMany(['RV0_NO_SHOW'], wRange),
-                rv1Planned: await this.countHistoryMany(['RV1_PLANNED'], wRange),
-                rv1Honored: await this.countHistoryMany(['RV1_HONORED'], wRange),
-                rv1NoShow: await this.countHistoryMany(['RV1_NO_SHOW'], wRange),
-                rv1Postponed: await this.countHistoryMany(['RV1_POSTPONED'], wRange),
-                rv2Planned: await this.countHistoryMany(['RV2_PLANNED'], wRange),
-                rv2Honored: await this.countHistoryMany(['RV2_HONORED'], wRange),
-                rv2Postponed: await this.countHistoryMany(['RV2_POSTPONED'], wRange),
-                notQualified: await this.countHistoryMany(['NOT_QUALIFIED'], wRange),
-                lost: await this.countHistoryMany(['LOST'], wRange),
+                rv0Planned: await this.countEnteredInStages(['RV0_PLANNED'], wRange),
+                rv0Honored: await this.countEnteredInStages(['RV0_HONORED'], wRange),
+                rv0NoShow: await this.countEnteredInStages(['RV0_NO_SHOW'], wRange),
+                rv1Planned: await this.countEnteredInStages(['RV1_PLANNED'], wRange),
+                rv1Honored: await this.countEnteredInStages(['RV1_HONORED'], wRange),
+                rv1NoShow: await this.countEnteredInStages(['RV1_NO_SHOW'], wRange),
+                rv2Planned: await this.countEnteredInStages(['RV2_PLANNED'], wRange),
+                rv2Honored: await this.countEnteredInStages(['RV2_HONORED'], wRange),
+                rv2Postponed: await this.countEnteredInStages(['RV2_POSTPONED'], wRange),
+                notQualified: await this.countEnteredInStages(['NOT_QUALIFIED'], wRange),
+                lost: await this.countEnteredInStages(['LOST'], wRange),
             };
             out.push(row);
         }
         return out;
     }
+    async perDayFromStages(keys, from, to) {
+        const r = toRange(from, to);
+        const ids = await this.stageIdsForKeys(keys);
+        if (!r.from || !r.to) {
+            const where = {
+                AND: [
+                    { OR: [{ stage: { in: keys } }, ...(ids.length ? [{ stageId: { in: ids } }] : [])] },
+                ],
+            };
+            const total = await this.prisma.lead.count({ where });
+            return { total: num(total), byDay: [] };
+        }
+        const days = [];
+        let total = 0;
+        const start = new Date(r.from);
+        const end = new Date(r.to);
+        for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+            const d0 = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
+            const d1 = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 23, 59, 59, 999));
+            const where = {
+                AND: [
+                    { OR: [{ stage: { in: keys } }, ...(ids.length ? [{ stageId: { in: ids } }] : [])] },
+                    { stageUpdatedAt: { gte: d0, lte: d1 } },
+                ],
+            };
+            const n = await this.prisma.lead.count({ where });
+            total += num(n);
+            days.push({ day: d0.toISOString(), count: num(n) });
+        }
+        return { total, byDay: days };
+    }
     async metricCallRequests(from, to) {
-        return this.perDayFromHistory('CALL_REQUESTED', from, to);
+        return this.perDayFromStages(['CALL_REQUESTED'], from, to);
     }
     async metricCalls(from, to) {
-        return this.perDayFromHistory('CALL_ATTEMPT', from, to);
+        return this.perDayFromStages(['CALL_ATTEMPT'], from, to);
     }
     async metricCallsAnswered(from, to) {
-        return this.perDayFromHistory('CALL_ANSWERED', from, to);
+        return this.perDayFromStages(['CALL_ANSWERED'], from, to);
     }
     async drillLeadsReceived(args) {
         const r = toRange(args.from, args.to);
@@ -730,12 +671,7 @@ let ReportingService = class ReportingService {
             orderBy: { createdAt: 'desc' },
             take: args.limit,
             select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
-                phone: true,
-                createdAt: true,
+                id: true, firstName: true, lastName: true, email: true, phone: true, createdAt: true,
                 setter: { select: { id: true, firstName: true, email: true } },
                 closer: { select: { id: true, firstName: true, email: true } },
                 saleValue: true,
@@ -744,8 +680,7 @@ let ReportingService = class ReportingService {
         const items = rows.map((L) => ({
             leadId: L.id,
             leadName: [L.firstName, L.lastName].filter(Boolean).join(' ') || '—',
-            email: L.email,
-            phone: L.phone,
+            email: L.email, phone: L.phone,
             setter: L.setter ? { id: L.setter.id, name: L.setter.firstName, email: L.setter.email } : null,
             closer: L.closer ? { id: L.closer.id, name: L.closer.firstName, email: L.closer.email } : null,
             appointment: null,
@@ -762,23 +697,16 @@ let ReportingService = class ReportingService {
             orderBy: { stageUpdatedAt: 'desc' },
             take: args.limit,
             select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
-                phone: true,
+                id: true, firstName: true, lastName: true, email: true, phone: true,
                 setter: { select: { id: true, firstName: true, email: true } },
                 closer: { select: { id: true, firstName: true, email: true } },
-                saleValue: true,
-                createdAt: true,
-                stageUpdatedAt: true,
+                saleValue: true, createdAt: true, stageUpdatedAt: true,
             },
         });
         const items = rows.map((L) => ({
             leadId: L.id,
             leadName: [L.firstName, L.lastName].filter(Boolean).join(' ') || '—',
-            email: L.email,
-            phone: L.phone,
+            email: L.email, phone: L.phone,
             setter: L.setter ? { id: L.setter.id, name: L.setter.firstName, email: L.setter.email } : null,
             closer: L.closer ? { id: L.closer.id, name: L.closer.firstName, email: L.closer.email } : null,
             appointment: null,
@@ -801,22 +729,13 @@ let ReportingService = class ReportingService {
             orderBy: { scheduledAt: 'desc' },
             take: args.limit,
             select: {
-                type: true,
-                status: true,
-                scheduledAt: true,
-                userId: true,
+                type: true, status: true, scheduledAt: true, userId: true,
                 lead: {
                     select: {
-                        id: true,
-                        firstName: true,
-                        lastName: true,
-                        email: true,
-                        phone: true,
+                        id: true, firstName: true, lastName: true, email: true, phone: true,
                         setter: { select: { id: true, firstName: true, email: true } },
                         closer: { select: { id: true, firstName: true, email: true } },
-                        saleValue: true,
-                        createdAt: true,
-                        stageUpdatedAt: true,
+                        saleValue: true, createdAt: true, stageUpdatedAt: true,
                     },
                 },
             },
@@ -828,8 +747,7 @@ let ReportingService = class ReportingService {
             return {
                 leadId: L.id,
                 leadName: [L.firstName, L.lastName].filter(Boolean).join(' ') || '—',
-                email: L.email,
-                phone: L.phone,
+                email: L.email, phone: L.phone,
                 setter: L.setter ? { id: L.setter.id, name: L.setter.firstName, email: L.setter.email } : null,
                 closer: L.closer ? { id: L.closer.id, name: L.closer.firstName, email: L.closer.email } : null,
                 appointment: { type: r0.type, status: r0.status, scheduledAt: r0.scheduledAt.toISOString() },
@@ -847,21 +765,13 @@ let ReportingService = class ReportingService {
             orderBy: { requestedAt: 'desc' },
             take: args.limit,
             select: {
-                requestedAt: true,
-                channel: true,
-                status: true,
+                requestedAt: true, channel: true, status: true,
                 lead: {
                     select: {
-                        id: true,
-                        firstName: true,
-                        lastName: true,
-                        email: true,
-                        phone: true,
+                        id: true, firstName: true, lastName: true, email: true, phone: true,
                         setter: { select: { id: true, firstName: true, email: true } },
                         closer: { select: { id: true, firstName: true, email: true } },
-                        saleValue: true,
-                        createdAt: true,
-                        stageUpdatedAt: true,
+                        saleValue: true, createdAt: true, stageUpdatedAt: true,
                     },
                 },
             },
@@ -873,8 +783,7 @@ let ReportingService = class ReportingService {
             return {
                 leadId: L.id,
                 leadName: [L.firstName, L.lastName].filter(Boolean).join(' ') || '—',
-                email: L.email,
-                phone: L.phone,
+                email: L.email, phone: L.phone,
                 setter: L.setter ? { id: L.setter.id, name: L.setter.firstName, email: L.setter.email } : null,
                 closer: L.closer ? { id: L.closer.id, name: L.closer.firstName, email: L.closer.email } : null,
                 appointment: { type: 'CALL_REQUEST', status: r0.status, scheduledAt: r0.requestedAt.toISOString() },
@@ -893,21 +802,13 @@ let ReportingService = class ReportingService {
                 orderBy: { startedAt: 'desc' },
                 take: args.limit,
                 select: {
-                    startedAt: true,
-                    outcome: true,
-                    userId: true,
+                    startedAt: true, outcome: true, userId: true,
                     lead: {
                         select: {
-                            id: true,
-                            firstName: true,
-                            lastName: true,
-                            email: true,
-                            phone: true,
+                            id: true, firstName: true, lastName: true, email: true, phone: true,
                             setter: { select: { id: true, firstName: true, email: true } },
                             closer: { select: { id: true, firstName: true, email: true } },
-                            saleValue: true,
-                            createdAt: true,
-                            stageUpdatedAt: true,
+                            saleValue: true, createdAt: true, stageUpdatedAt: true,
                         },
                     },
                 },
@@ -919,8 +820,7 @@ let ReportingService = class ReportingService {
                 return {
                     leadId: L.id,
                     leadName: [L.firstName, L.lastName].filter(Boolean).join(' ') || '—',
-                    email: L.email,
-                    phone: L.phone,
+                    email: L.email, phone: L.phone,
                     setter: L.setter ? { id: L.setter.id, name: L.setter.firstName, email: L.setter.email } : null,
                     closer: L.closer ? { id: L.closer.id, name: L.closer.firstName, email: L.closer.email } : null,
                     appointment: { type: 'CALL', status: r0.outcome, scheduledAt: r0.startedAt.toISOString() },
@@ -938,23 +838,16 @@ let ReportingService = class ReportingService {
                 orderBy: { stageUpdatedAt: 'desc' },
                 take: args.limit,
                 select: {
-                    id: true,
-                    firstName: true,
-                    lastName: true,
-                    email: true,
-                    phone: true,
+                    id: true, firstName: true, lastName: true, email: true, phone: true,
                     setter: { select: { id: true, firstName: true, email: true } },
                     closer: { select: { id: true, firstName: true, email: true } },
-                    saleValue: true,
-                    createdAt: true,
-                    stageUpdatedAt: true,
+                    saleValue: true, createdAt: true, stageUpdatedAt: true,
                 },
             });
             const items = rows.map((L) => ({
                 leadId: L.id,
                 leadName: [L.firstName, L.lastName].filter(Boolean).join(' ') || '—',
-                email: L.email,
-                phone: L.phone,
+                email: L.email, phone: L.phone,
                 setter: L.setter ? { id: L.setter.id, name: L.setter.firstName, email: L.setter.email } : null,
                 closer: L.closer ? { id: L.closer.id, name: L.closer.firstName, email: L.closer.email } : null,
                 appointment: null,
@@ -970,21 +863,13 @@ let ReportingService = class ReportingService {
             orderBy: { startedAt: 'desc' },
             take: args.limit,
             select: {
-                startedAt: true,
-                outcome: true,
-                userId: true,
+                startedAt: true, outcome: true, userId: true,
                 lead: {
                     select: {
-                        id: true,
-                        firstName: true,
-                        lastName: true,
-                        email: true,
-                        phone: true,
+                        id: true, firstName: true, lastName: true, email: true, phone: true,
                         setter: { select: { id: true, firstName: true, email: true } },
                         closer: { select: { id: true, firstName: true, email: true } },
-                        saleValue: true,
-                        createdAt: true,
-                        stageUpdatedAt: true,
+                        saleValue: true, createdAt: true, stageUpdatedAt: true,
                     },
                 },
             },
@@ -996,8 +881,7 @@ let ReportingService = class ReportingService {
             return {
                 leadId: L.id,
                 leadName: [L.firstName, L.lastName].filter(Boolean).join(' ') || '—',
-                email: L.email,
-                phone: L.phone,
+                email: L.email, phone: L.phone,
                 setter: L.setter ? { id: L.setter.id, name: L.setter.firstName, email: L.setter.email } : null,
                 closer: L.closer ? { id: L.closer.id, name: L.closer.firstName, email: L.closer.email } : null,
                 appointment: { type: 'CALL', status: r0.outcome, scheduledAt: r0.startedAt.toISOString() },
