@@ -20,4 +20,5 @@ import { StageEventsService } from '../modules/leads/stage-events.service';
   ],
   exports: [ProspectsService],
 })
+    
 export class ProspectsModule {}
