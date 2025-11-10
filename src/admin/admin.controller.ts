@@ -43,4 +43,6 @@ export class AdminController {
     const l = parseInt(leads, 10) || 180;
     return this.admin.seedDemo({ days: d, setters: s, closers: c, leads: l });
   }
+  
 }
+
