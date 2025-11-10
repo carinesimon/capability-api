@@ -145,4 +145,5 @@ export class ProspectsController {
   getOne(@Param('id') id: string) {
     return this.svc.getOne(id);
   }
+  
 }
