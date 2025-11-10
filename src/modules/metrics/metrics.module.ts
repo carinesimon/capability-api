@@ -10,4 +10,5 @@ import { PrismaModule } from '../../prisma/prisma.module';
   providers: [MetricsService],
   exports: [MetricsService],
 })
+  
 export class MetricsModule {}
