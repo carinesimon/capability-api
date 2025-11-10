@@ -13,4 +13,5 @@ import { AuthModule } from '../auth/auth.module';
   providers: [PdfExportService],
   exports: [PdfExportService],
 })
+  
 export class PdfExportModule {}
