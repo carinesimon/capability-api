@@ -14,6 +14,7 @@ export class PrismaService
         process.env.NODE_ENV === 'production'
           ? ['warn', 'error']
           : ['query', 'info', 'warn', 'error'],
+      
     });
 
     // ⚠️ Si vous aviez des middlewares Prisma, vous pouvez les remettre ici.
@@ -31,3 +32,4 @@ export class PrismaService
     await this.$disconnect();
   }
 }
+
