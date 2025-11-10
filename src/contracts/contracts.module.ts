@@ -6,4 +6,5 @@ import { ContractsController } from './contracts.controller';
   providers: [ContractsService],
   controllers: [ContractsController]
 })
+  
 export class ContractsModule {}
