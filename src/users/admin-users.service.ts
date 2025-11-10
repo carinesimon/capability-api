@@ -89,4 +89,5 @@ export class AdminUsersService {
     await this.prisma.user.update({ where: { id }, data });
     return { ok: true };
   }
+  
 }
