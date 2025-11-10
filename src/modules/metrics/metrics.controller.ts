@@ -103,4 +103,5 @@ export class MetricsController {
 
     return this.metrics.stageSeriesByDay({ start, end: endExclusive, stage });
   }
+
 }
