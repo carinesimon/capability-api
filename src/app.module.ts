@@ -42,4 +42,5 @@ import { MetricsModule } from './modules/metrics/metrics.module';
   controllers: [AppController],
   providers: [AppService],
 })
+  
 export class AppModule {}
