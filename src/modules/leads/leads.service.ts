@@ -20,6 +20,7 @@ export class LeadsService {
     const lead = await this.prisma.lead.findUnique({
       where: { id: leadId },
       select: { stage: true },
+      
     });
     if (!lead) throw new NotFoundException('Lead not found');
 
@@ -64,4 +65,5 @@ export class LeadsService {
     return { ok: true };
   }
   
+
 }
