@@ -6,4 +6,5 @@ export class CreateLeadDto {
   @IsEmail() email: string;
   @IsOptional() @IsString() tag?: string;
   @IsOptional() @IsString() assignedTo?: string; // setterId optionnel
+  
 }
