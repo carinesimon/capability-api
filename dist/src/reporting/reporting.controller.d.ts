@@ -2,7 +2,7 @@ import { ReportingService } from './reporting.service';
 export declare class ReportingController {
     private readonly reporting;
     constructor(reporting: ReportingService);
-    getSummary(from?: string, to?: string): Promise<{
+    getSummary(from?: string, to?: string, _tz?: string): Promise<{
         period: {
             from?: string;
             to?: string;
@@ -18,20 +18,53 @@ export declare class ReportingController {
             rv1Honored: number;
         };
     }>;
-    getLeadsReceived(from?: string, to?: string): Promise<{
+    getLeadsReceived(from?: string, to?: string, _tz?: string): Promise<{
         total: number;
         byDay?: Array<{
             day: string;
             count: number;
         }>;
     }>;
-    getSalesWeekly(from?: string, to?: string): Promise<{
+    spotlightSetters(from?: string, to?: string, _tz?: string): Promise<{
+        userId: string;
+        name: string;
+        email: string;
+        rv1PlannedOnHisLeads: number;
+        rv1DoneOnHisLeads: number;
+        rv1CanceledOnHisLeads: number;
+        rv1CancelRate: number | null;
+        salesFromHisLeads: number;
+        revenueFromHisLeads: number;
+        settingRate: number | null;
+        leadsReceived: number;
+        ttfcAvgMinutes: number | null;
+    }[]>;
+    spotlightClosers(from?: string, to?: string, _tz?: string): Promise<{
+        userId: string;
+        name: string;
+        email: string;
+        rv1Planned: number;
+        rv1Honored: number;
+        rv1Canceled: number;
+        rv1CancelRate: number | null;
+        rv2Planned: number;
+        rv2Canceled: number;
+        rv2CancelRate: number | null;
+        salesClosed: number;
+        revenueTotal: number;
+        closingRate: number | null;
+    }[]>;
+    exportSpotlightSettersCsv(from?: string, to?: string, _tz?: string, res?: any): Promise<any>;
+    exportSpotlightClosersCsv(from?: string, to?: string, _tz?: string, res?: any): Promise<any>;
+    exportSpotlightSettersPdf(from?: string, to?: string, _tz?: string, res?: any): Promise<any>;
+    exportSpotlightClosersPdf(from?: string, to?: string, _tz?: string, res?: any): Promise<any>;
+    getSalesWeekly(from?: string, to?: string, _tz?: string): Promise<{
         weekStart: string;
         weekEnd: string;
         revenue: number;
         count: number;
     }[]>;
-    getSetters(from?: string, to?: string): Promise<{
+    getSetters(from?: string, to?: string, _tz?: string): Promise<{
         userId: string;
         name: string;
         email: string;
@@ -45,8 +78,11 @@ export declare class ReportingController {
         cpRv0: number | null;
         cpRv1: number | null;
         roas: number | null;
+        rv1PlannedFromHisLeads: number;
+        rv1CanceledFromHisLeads: number;
+        salesFromHisLeads: number;
     }[]>;
-    getClosers(from?: string, to?: string): Promise<{
+    getClosers(from?: string, to?: string, _tz?: string): Promise<{
         userId: string;
         name: string;
         email: string;
@@ -59,8 +95,12 @@ export declare class ReportingController {
         revenueTotal: number;
         roasPlanned: number | null;
         roasHonored: number | null;
+        rv1Canceled: number;
+        rv2Canceled: number;
+        rv1CancelRate: number | null;
+        rv2CancelRate: number | null;
     }[]>;
-    getDuos(from?: string, to?: string): Promise<{
+    getDuos(from?: string, to?: string, _tz?: string): Promise<{
         setterId: string;
         setterName: string;
         setterEmail: string;
@@ -74,7 +114,7 @@ export declare class ReportingController {
         rv1Honored: number;
         rv1HonorRate: number | null;
     }[]>;
-    getWeeklyOps(from?: string, to?: string): Promise<{
+    getWeeklyOps(from?: string, to?: string, _tz?: string): Promise<{
         ok: true;
         rows: {
             weekStart: string;
@@ -93,7 +133,61 @@ export declare class ReportingController {
             lost?: number;
         }[];
     }>;
-    drillLeads(from?: string, to?: string, limitStr?: string): Promise<{
+    getFunnel(from?: string, to?: string, _tz?: string): Promise<{
+        period: {
+            from?: string;
+            to?: string;
+        };
+        totals: {
+            leads: number;
+            callRequests: number;
+            callsTotal: number;
+            callsAnswered: number;
+            setterNoShow: number;
+            rv0Planned: number;
+            rv0Honored: number;
+            rv0NoShow: number;
+            rv0Canceled: number;
+            rv1Planned: number;
+            rv1Honored: number;
+            rv1NoShow: number;
+            rv1Canceled: number;
+            rv2Planned: number;
+            rv2Honored: number;
+            rv2Canceled: number;
+            notQualified: number;
+            lost: number;
+            wonCount: number;
+            appointmentCanceled: number;
+        };
+        weekly: ({
+            weekStart: string;
+            weekEnd: string;
+        } & {
+            leads: number;
+            callRequests: number;
+            callsTotal: number;
+            callsAnswered: number;
+            setterNoShow: number;
+            rv0Planned: number;
+            rv0Honored: number;
+            rv0NoShow: number;
+            rv0Canceled: number;
+            rv1Planned: number;
+            rv1Honored: number;
+            rv1NoShow: number;
+            rv1Canceled: number;
+            rv2Planned: number;
+            rv2Honored: number;
+            rv2Canceled: number;
+            notQualified: number;
+            lost: number;
+            wonCount: number;
+            appointmentCanceled: number;
+        })[];
+    }>;
+    getPipelineMetrics(keys?: string, from?: string, to?: string, mode?: 'entered' | 'current', _tz?: string): Promise<Record<string, number>>;
+    drillLeads(from?: string, to?: string, limitStr?: string, _tz?: string): Promise<{
         ok: boolean;
         count: number;
         items: {
@@ -116,7 +210,7 @@ export declare class ReportingController {
             createdAt: string;
         }[];
     }>;
-    drillWon(from?: string, to?: string, limitStr?: string): Promise<{
+    drillWon(from?: string, to?: string, limitStr?: string, _tz?: string): Promise<{
         ok: boolean;
         count: number;
         items: {
@@ -140,7 +234,7 @@ export declare class ReportingController {
             stageUpdatedAt: string;
         }[];
     }>;
-    drillAppointments(from?: string, to?: string, type?: 'RV0' | 'RV1' | 'RV2', status?: 'HONORED' | 'POSTPONED' | 'CANCELED' | 'NO_SHOW' | 'NOT_QUALIFIED', userId?: string, limitStr?: string): Promise<{
+    drillAppointments(from?: string, to?: string, type?: 'RV0' | 'RV1' | 'RV2', status?: 'HONORED' | 'POSTPONED' | 'CANCELED' | 'NO_SHOW' | 'NOT_QUALIFIED', userId?: string, limitStr?: string, _tz?: string): Promise<{
         ok: boolean;
         count: number;
         items: {
@@ -168,7 +262,7 @@ export declare class ReportingController {
             stageUpdatedAt: string;
         }[];
     }>;
-    drillCallRequests(from?: string, to?: string, limitStr?: string): Promise<{
+    drillCallRequests(from?: string, to?: string, limitStr?: string, _tz?: string): Promise<{
         ok: boolean;
         count: number;
         items: {
@@ -196,7 +290,7 @@ export declare class ReportingController {
             stageUpdatedAt: string;
         }[];
     }>;
-    drillCalls(from?: string, to?: string, answeredStr?: string, setterNoShowStr?: string, limitStr?: string): Promise<{
+    drillCalls(from?: string, to?: string, answeredStr?: string, setterNoShowStr?: string, limitStr?: string, _tz?: string): Promise<{
         ok: boolean;
         count: number;
         items: {
@@ -246,5 +340,23 @@ export declare class ReportingController {
             createdAt: string;
             stageUpdatedAt: string;
         }[];
+    }>;
+    metricStageSeries(stage?: string, from?: string, to?: string, _tz?: string): Promise<{
+        total: number;
+        byDay?: Array<{
+            day: string;
+            count: number;
+        }>;
+    }>;
+    leadsByDay(from?: string, to?: string, _tz?: string): Promise<{
+        total: number;
+        byDay?: Array<{
+            day: string;
+            count: number;
+        }>;
+    }>;
+    canceledDaily(from?: string, to?: string, _tz?: string): Promise<{
+        total: number;
+        byDay: Array<any>;
     }>;
 }

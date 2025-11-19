@@ -1,4 +1,8 @@
 import { PrismaService } from '../prisma/prisma.service';
+type RangeArgs = {
+    from?: string;
+    to?: string;
+};
 type SetterRow = {
     userId: string;
     name: string;
@@ -13,6 +17,9 @@ type SetterRow = {
     cpRv0: number | null;
     cpRv1: number | null;
     roas: number | null;
+    rv1PlannedFromHisLeads: number;
+    rv1CanceledFromHisLeads: number;
+    salesFromHisLeads: number;
 };
 type CloserRow = {
     userId: string;
@@ -27,6 +34,39 @@ type CloserRow = {
     revenueTotal: number;
     roasPlanned: number | null;
     roasHonored: number | null;
+    rv1Canceled: number;
+    rv2Canceled: number;
+    rv1CancelRate: number | null;
+    rv2CancelRate: number | null;
+};
+type SpotlightSetterRow = {
+    userId: string;
+    name: string;
+    email: string;
+    rv1PlannedOnHisLeads: number;
+    rv1DoneOnHisLeads: number;
+    rv1CanceledOnHisLeads: number;
+    rv1CancelRate: number | null;
+    salesFromHisLeads: number;
+    revenueFromHisLeads: number;
+    settingRate: number | null;
+    leadsReceived: number;
+    ttfcAvgMinutes: number | null;
+};
+type SpotlightCloserRow = {
+    userId: string;
+    name: string;
+    email: string;
+    rv1Planned: number;
+    rv1Honored: number;
+    rv1Canceled: number;
+    rv1CancelRate: number | null;
+    rv2Planned: number;
+    rv2Canceled: number;
+    rv2CancelRate: number | null;
+    salesClosed: number;
+    revenueTotal: number;
+    closingRate: number | null;
 };
 type LeadsReceivedOut = {
     total: number;
@@ -82,14 +122,18 @@ type FunnelTotals = {
     rv0Planned: number;
     rv0Honored: number;
     rv0NoShow: number;
+    rv0Canceled: number;
     rv1Planned: number;
     rv1Honored: number;
     rv1NoShow: number;
+    rv1Canceled: number;
     rv2Planned: number;
     rv2Honored: number;
+    rv2Canceled: number;
     notQualified: number;
     lost: number;
     wonCount: number;
+    appointmentCanceled: number;
 };
 type FunnelWeeklyRow = {
     weekStart: string;
@@ -118,15 +162,47 @@ type DuoRow = {
     rv1HonorRate: number | null;
 };
 export declare class ReportingService {
-    private prisma;
+    private readonly prisma;
     constructor(prisma: PrismaService);
+    private dateSqlBounds;
+    private countSE;
+    private countSEGroupedBySetterDistinct;
     private wonStageIds;
     private wonFilter;
+    exportSpotlightSettersCSV({ from, to }: RangeArgs): Promise<Buffer>;
+    exportSpotlightClosersCSV({ from, to }: RangeArgs): Promise<Buffer>;
+    private buildSpotlightPDF;
+    private buildSetterAnalysis;
+    private buildCloserAnalysis;
+    exportSpotlightSettersPDF({ from, to }: {
+        from?: string;
+        to?: string;
+    }): Promise<Buffer>;
+    exportSpotlightClosersPDF({ from, to }: {
+        from?: string;
+        to?: string;
+    }): Promise<Buffer>;
     private sumSpend;
     leadsReceived(from?: string, to?: string): Promise<LeadsReceivedOut>;
     salesWeekly(from?: string, to?: string): Promise<SalesWeeklyItem[]>;
+    private ttfcBySetter;
+    private ttfcBySetterViaStages;
     settersReport(from?: string, to?: string): Promise<SetterRow[]>;
+    private perDayFromStageEvents;
+    stageSeries(stage: string, from?: string, to?: string, tz?: string): Promise<{
+        total: number;
+        byDay?: Array<{
+            day: string;
+            count: number;
+        }>;
+    }>;
+    canceledDaily(from?: string, to?: string, tz?: string): Promise<{
+        total: number;
+        byDay: Array<any>;
+    }>;
     closersReport(from?: string, to?: string): Promise<CloserRow[]>;
+    spotlightSetters(from?: string, to?: string): Promise<SpotlightSetterRow[]>;
+    spotlightClosers(from?: string, to?: string): Promise<SpotlightCloserRow[]>;
     duosReport(from?: string, to?: string): Promise<DuoRow[]>;
     summary(from?: string, to?: string): Promise<SummaryOut>;
     private stageIdsForKeys;
@@ -157,6 +233,27 @@ export declare class ReportingService {
         }>;
     }>;
     metricCallsAnswered(from?: string, to?: string): Promise<{
+        total: number;
+        byDay?: Array<{
+            day: string;
+            count: number;
+        }>;
+    }>;
+    metricCallsCanceled0(f?: string, t?: string, tz?: string): Promise<{
+        total: number;
+        byDay?: Array<{
+            day: string;
+            count: number;
+        }>;
+    }>;
+    metricCallsCanceled1(f?: string, t?: string, tz?: string): Promise<{
+        total: number;
+        byDay?: Array<{
+            day: string;
+            count: number;
+        }>;
+    }>;
+    metricCallsCanceled2(f?: string, t?: string, tz?: string): Promise<{
         total: number;
         byDay?: Array<{
             day: string;

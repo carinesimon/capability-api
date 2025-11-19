@@ -27,6 +27,9 @@ var StageDto;
     StageDto["RV1_NO_SHOW"] = "RV1_NO_SHOW";
     StageDto["RV2_PLANIFIE"] = "RV2_PLANIFIE";
     StageDto["RV2_HONORE"] = "RV2_HONORE";
+    StageDto["RV0_ANNULE"] = "RV0_CANCELED";
+    StageDto["RV1_ANNULE"] = "RV1_CANCELED";
+    StageDto["RV2_ANNULE"] = "RV2_CANCELED";
     StageDto["WON"] = "WON";
     StageDto["LOST"] = "LOST";
     StageDto["NOT_QUALIFIED"] = "NOT_QUALIFIED";
@@ -44,7 +47,7 @@ __decorate([
 ], CreateProspectEventDto.prototype, "type", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsEnum)(StageDto),
+    (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], CreateProspectEventDto.prototype, "stage", void 0);
 __decorate([
@@ -78,6 +81,12 @@ function normalizeStage(input) {
         RV2_PLANIFIE: StageDto.RV2_PLANIFIE, RDV2_PLANIFIE: StageDto.RV2_PLANIFIE,
         RV2_HONORE: StageDto.RV2_HONORE, RV2_HONORE_: StageDto.RV2_HONORE, RDV2_HONORE: StageDto.RV2_HONORE,
         WON: StageDto.WON, LOST: StageDto.LOST, NOT_QUALIFIED: StageDto.NOT_QUALIFIED,
+        RV0_ANNULE: StageDto.RV0_ANNULE,
+        RV1_ANNULE: StageDto.RV1_ANNULE,
+        RV2_ANNULE: StageDto.RV2_ANNULE,
+        RV0_CANCELED: StageDto.RV0_ANNULE,
+        RV1_CANCELED: StageDto.RV1_ANNULE,
+        RV2_CANCELED: StageDto.RV2_ANNULE,
     };
     return map[k];
 }

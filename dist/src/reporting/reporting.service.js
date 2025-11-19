@@ -8,11 +8,17 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ReportingService = void 0;
 const common_1 = require("@nestjs/common");
-const prisma_service_1 = require("../prisma/prisma.service");
 const client_1 = require("@prisma/client");
+const prisma_service_1 = require("../prisma/prisma.service");
+const client_2 = require("@prisma/client");
+const pdfkit_1 = __importDefault(require("pdfkit"));
+const json2csv_1 = require("json2csv");
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 function toUTCDateOnly(s) {
     if (!s)
@@ -23,6 +29,145 @@ function toUTCDateOnly(s) {
     }
     const [y, m, d] = s.split('-').map(Number);
     return new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
+}
+async function buildAdvancedPDF(params) {
+    return await new Promise((resolve) => {
+        const doc = new pdfkit_1.default({ size: 'A4', margin: 24 });
+        const chunks = [];
+        doc.on('data', (c) => chunks.push(c));
+        doc.on('end', () => resolve(Buffer.concat(chunks)));
+        doc.rect(0, 0, doc.page.width, doc.page.height).fill(PALETTE.bg);
+        const bandH = 68;
+        doc.save();
+        doc.fillColor(PALETTE.surface).rect(0, 0, doc.page.width, bandH).fill();
+        doc.restore();
+        doc.fillColor(PALETTE.text).fontSize(16).font('Helvetica-Bold');
+        doc.text(params.title, 24, 18, { width: doc.page.width - 48 });
+        doc.fontSize(10).font('Helvetica').fillColor(PALETTE.muted);
+        doc.text(params.period, { width: doc.page.width - 48 });
+        const chipY = 44;
+        doc.save();
+        doc.roundedRect(24, chipY, doc.page.width - 48, 16, 8).fill(PALETTE.card);
+        doc.restore();
+        let y = 90;
+        doc.fontSize(11).font('Helvetica-Bold').fillColor(PALETTE.text);
+        doc.text('Analyse & recommandations', 24, y);
+        y += 14;
+        doc.fontSize(10).font('Helvetica').fillColor(PALETTE.text);
+        y = wrap(doc, params.analysisIntro, 24, y, doc.page.width - 48);
+        y += 10;
+        doc.save();
+        doc.moveTo(24, y).lineTo(doc.page.width - 24, y).strokeColor(PALETTE.line).lineWidth(0.8).stroke();
+        doc.restore();
+        y += 10;
+        const startX = 24;
+        const tableW = doc.page.width - 48;
+        const headerH = 18;
+        function renderTableHeader(yh) {
+            doc.save();
+            doc.roundedRect(startX, yh - 2, tableW, headerH + 6, 6).fill(PALETTE.surface);
+            doc.restore();
+            let x = startX + 8;
+            params.columns.forEach((c) => {
+                doc.fontSize(9).font('Helvetica-Bold').fillColor(PALETTE.text);
+                doc.text(c.header, x, yh, { width: c.width - 8, align: c.align || 'left' });
+                x += c.width;
+            });
+            return yh + headerH + 8;
+        }
+        y = renderTableHeader(y);
+        const rowH = 16;
+        params.rows.forEach((r, idx) => {
+            const zebra = idx % 2 === 0 ? PALETTE.card : PALETTE.bg;
+            let rowHeight = rowH;
+            const formatted = params.columns.map(c => {
+                const raw = r[c.key];
+                const val = (c.format ? c.format(raw) : raw) ?? '';
+                return String(val);
+            });
+            const note = params.perRowNotes ? params.perRowNotes(r) : '';
+            const noteLines = note ? doc.heightOfString(note, { width: tableW - 16, align: 'left' }) : 0;
+            const extraNote = note ? Math.max(12, noteLines + 4) : 0;
+            rowHeight += extraNote;
+            if (y + rowHeight + 32 > doc.page.height) {
+                renderFooter(doc, params);
+                doc.addPage();
+                doc.rect(0, 0, doc.page.width, doc.page.height).fill(PALETTE.bg);
+                y = 24;
+                y = renderTableHeader(y);
+            }
+            doc.save();
+            doc.roundedRect(startX, y - 2, tableW, rowHeight, 6).fill(zebra);
+            doc.restore();
+            let x = startX + 8;
+            params.columns.forEach((c, i) => {
+                doc.fontSize(9).font('Helvetica').fillColor(PALETTE.text);
+                doc.text(formatted[i], x, y, { width: c.width - 8, align: c.align || 'left' });
+                x += c.width;
+            });
+            if (note) {
+                doc.fontSize(8.5).font('Helvetica').fillColor(PALETTE.muted);
+                y = wrap(doc, note, startX + 8, y + rowH - 2, tableW - 16) + 6;
+            }
+            else {
+                y += rowH + 4;
+            }
+        });
+        renderFooter(doc, params);
+        doc.end();
+        function renderFooter(d, p) {
+            const txt = `${p.title} — ${p.period}`;
+            const pageStr = `Page ${d.page.number}`;
+            const yy = d.page.height - 20;
+            d.save();
+            d.fontSize(8).font('Helvetica').fillColor(PALETTE.muted);
+            d.text(txt, 24, yy, { width: (d.page.width / 2) - 24, align: 'left' });
+            d.text(pageStr, d.page.width / 2, yy, { width: (d.page.width / 2) - 24, align: 'right' });
+            d.restore();
+        }
+    });
+}
+function setterRowNote(r) {
+    const leads = r.leadsReceived || 0;
+    const rv1P = r.rv1PlannedOnHisLeads || 0;
+    const rv1H = r.rv1HonoredOnHisLeads || 0;
+    const rv1C = r.rv1CanceledOnHisLeads || 0;
+    const cancel = pct(rv1C, Math.max(1, rv1P));
+    const qual = pct(rv1P, Math.max(1, leads));
+    const presence = pct(rv1H, Math.max(1, rv1P));
+    const tips = [];
+    if (leads >= 1 && qual < 25)
+        tips.push(`Qualification faible (${qual}%) → revoir script d’amorce & timing TTFC.`);
+    if (presence < 60 && rv1P >= 5)
+        tips.push(`Présence RV1 basse (${presence}%) → rappels + handoff plus robuste.`);
+    if (cancel >= 20)
+        tips.push(`Annulations élevées (${cancel}%) → vérifier alignement promesse / cible.`);
+    if (!tips.length)
+        tips.push(`Bon niveau de rigueur. Continuer la standardisation des SOP.`);
+    return `• ${tips.join(' ')}`;
+}
+function closerRowNote(r) {
+    const rv1P = r.rv1Planned || 0;
+    const rv1H = r.rv1Honored || 0;
+    const sales = r.salesClosed || 0;
+    const cancel = pct(r.rv1Canceled || 0, Math.max(1, rv1P));
+    const closing = pct(sales, Math.max(1, rv1H));
+    const tips = [];
+    if (rv1H >= 1 && closing < 25)
+        tips.push(`Taux de closing bas (${closing}%) → travailler objections & preuve sociale.`);
+    if (cancel >= 20)
+        tips.push(`Annulations RV1 élevées (${cancel}%) → boucler avec setters sur la qualif.`);
+    if (!tips.length)
+        tips.push(`Performance solide. Augmenter le volume au-delà du médian.`);
+    return `• ${tips.join(' ')}`;
+}
+function toLocalDateISO(date, tz) {
+    const fmt = new Intl.DateTimeFormat('en-CA', {
+        timeZone: tz,
+        year: 'numeric', month: '2-digit', day: '2-digit',
+    });
+    const parts = fmt.formatToParts(date).reduce((acc, p) => (acc[p.type] = p.value, acc), {});
+    return `${parts.year}-${parts.month}-${parts.day}`;
 }
 const startOfDayUTC = (s) => (s ? toUTCDateOnly(s) : undefined);
 function endOfDayUTC(s) {
@@ -35,6 +180,27 @@ function endOfDayUTC(s) {
 }
 function toRange(from, to) {
     return { from: startOfDayUTC(from), to: endOfDayUTC(to) };
+}
+function whereLocalDay(field, from, to, tz = 'Europe/Paris') {
+    if (!from || !to)
+        return client_1.Prisma.sql `TRUE`;
+    return client_1.Prisma.sql `
+    ( (${client_1.Prisma.raw(`"${field}"`)} AT TIME ZONE ${tz})::date BETWEEN ${from}::date AND ${to}::date )
+  `;
+}
+function daysSpanLocal(from, to) {
+    if (!from || !to)
+        return [];
+    const out = [];
+    const d0 = new Date(from + 'T00:00:00');
+    const d1 = new Date(to + 'T00:00:00');
+    for (let d = new Date(d0); d <= d1; d.setDate(d.getDate() + 1)) {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        out.push(`${y}-${m}-${dd}`);
+    }
+    return out;
 }
 function between(field, r) {
     if (!r.from && !r.to)
@@ -60,10 +226,88 @@ function intersectWindow(aStart, aEnd, bStart, bEnd) {
     const e = new Date(Math.min(aEnd.getTime(), (bEnd ?? aEnd).getTime()));
     return s > e ? null : { start: s, end: e };
 }
+function pct(num, den) {
+    return den ? Math.round((num / den) * 100) : 0;
+}
+const PALETTE = {
+    bg: '#0F1420',
+    surface: '#121826',
+    card: '#0D1522',
+    text: '#E6E8EC',
+    muted: '#AAB0BC',
+    line: '#223047',
+    acc1: '#8B5CF6',
+    acc2: '#22C55E',
+    acc3: '#38BDF8',
+    warn: '#F59E0B',
+    danger: '#EF4444',
+    success: '#10B981',
+};
+function wrap(doc, text, x, y, w, opts = {}) {
+    doc.text(text, x, y, { width: w, ...opts });
+    return doc.y;
+}
 let ReportingService = class ReportingService {
     prisma;
     constructor(prisma) {
         this.prisma = prisma;
+    }
+    dateSqlBounds(from, to, tz = 'Europe/Paris') {
+        if (!from || !to)
+            return { from, to, tz };
+        return { from, to, tz };
+    }
+    async countSE(args) {
+        const { stages, r, by, distinctByLead } = args;
+        if (!stages?.length)
+            return 0;
+        const selectCount = distinctByLead
+            ? client_1.Prisma.sql `COUNT(DISTINCT se."leadId")::int`
+            : client_1.Prisma.sql `COUNT(*)::int`;
+        const bySql = [];
+        if (by?.setterId)
+            bySql.push(client_1.Prisma.sql `l."setterId" = ${by.setterId}`);
+        if (by?.closerId)
+            bySql.push(client_1.Prisma.sql `l."closerId" = ${by.closerId}`);
+        if (by?.userId)
+            bySql.push(client_1.Prisma.sql `se."userId" = ${by.userId}`);
+        const whereBy = bySql.length ? client_1.Prisma.sql `AND ${client_1.Prisma.join(bySql, ' AND ')}` : client_1.Prisma.empty;
+        const stageList = client_1.Prisma.join(stages.map(s => client_1.Prisma.sql `${s}::"LeadStage"`));
+        const timeClause = r.from && r.to
+            ? client_1.Prisma.sql `se."occurredAt" >= ${r.from} AND se."occurredAt" <= ${r.to}`
+            : client_1.Prisma.sql `TRUE`;
+        const rows = await this.prisma.$queryRaw(client_1.Prisma.sql `
+    SELECT ${selectCount} AS n
+    FROM "StageEvent" se
+    JOIN "Lead" l ON l."id" = se."leadId"
+    WHERE se."toStage" = ANY(ARRAY[${stageList}]::"LeadStage"[])
+      AND ${timeClause}
+      ${whereBy}
+  `);
+        return rows?.[0]?.n ?? 0;
+    }
+    async countSEGroupedBySetterDistinct(args) {
+        const { stages, r } = args;
+        if (!stages?.length)
+            return new Map();
+        const stageList = client_1.Prisma.join(stages.map(s => client_1.Prisma.sql `${s}::"LeadStage"`));
+        const timeClause = r.from && r.to
+            ? client_1.Prisma.sql `se."occurredAt" >= ${r.from} AND se."occurredAt" <= ${r.to}`
+            : client_1.Prisma.sql `TRUE`;
+        const rows = await this.prisma.$queryRaw(client_1.Prisma.sql `
+    SELECT l."setterId" AS "setterId", COUNT(DISTINCT se."leadId")::int AS n
+    FROM "StageEvent" se
+    JOIN "Lead" l ON l."id" = se."leadId"
+    WHERE se."toStage" = ANY(ARRAY[${stageList}]::"LeadStage"[])
+      AND ${timeClause}
+    GROUP BY l."setterId"
+  `);
+        const out = new Map();
+        for (const row of rows) {
+            if (row.setterId)
+                out.set(row.setterId, row.n || 0);
+        }
+        return out;
     }
     async wonStageIds() {
         try {
@@ -81,14 +325,232 @@ let ReportingService = class ReportingService {
         const wonIds = await this.wonStageIds();
         const base = wonIds.length
             ? { stageId: { in: wonIds } }
-            : { stage: client_1.LeadStage.WON };
+            : { stage: client_2.LeadStage.WON };
         if (!r.from && !r.to)
             return base;
         return { AND: [base, between('stageUpdatedAt', r)] };
     }
+    async exportSpotlightSettersCSV({ from, to }) {
+        const rows = await this.spotlightSetters(from, to);
+        const csv = new json2csv_1.Parser({
+            fields: [
+                { label: 'Setter', value: 'name' },
+                { label: 'Email', value: 'email' },
+                { label: 'Leads reçus', value: (r) => r.leadsReceived || 0 },
+                { label: 'RV1 planifiés (ses leads)', value: (r) => r.rv1PlannedOnHisLeads || 0 },
+                { label: 'RV1 honorés (ses leads)', value: (r) => r.rv1HonoredOnHisLeads || 0 },
+                { label: 'RV1 annulés (ses leads)', value: (r) => r.rv1CanceledOnHisLeads || 0 },
+                { label: '% annulation RV1', value: (r) => pct(r.rv1CanceledOnHisLeads || 0, r.rv1PlannedOnHisLeads || 0) + '%' },
+                { label: 'Ventes (depuis ses leads)', value: (r) => r.salesFromHisLeads || 0 },
+                { label: 'CA (depuis ses leads)', value: (r) => r.revenueFromHisLeads || 0 },
+                { label: 'TTFC (min)', value: (r) => r.ttfcAvgMinutes ?? '' },
+                { label: 'Taux de setting', value: (r) => r.settingRate != null ? Math.round(r.settingRate * 100) + '%' : '' },
+            ]
+        }).parse(rows || []);
+        return Buffer.from(csv, 'utf8');
+    }
+    async exportSpotlightClosersCSV({ from, to }) {
+        const rows = await this.spotlightClosers(from, to);
+        const csv = new json2csv_1.Parser({
+            fields: [
+                { label: 'Closer', value: 'name' },
+                { label: 'Email', value: 'email' },
+                { label: 'RV1 planifiés', value: (r) => r.rv1Planned || 0 },
+                { label: 'RV1 honorés', value: (r) => r.rv1Honored || 0 },
+                { label: 'RV1 annulés', value: (r) => r.rv1Canceled || 0 },
+                { label: '% annulation RV1', value: (r) => pct(r.rv1Canceled || 0, r.rv1Planned || 0) + '%' },
+                { label: 'RV2 planifiés', value: (r) => r.rv2Planned || 0 },
+                { label: 'RV2 honorés', value: (r) => r.rv2Honored || 0 },
+                { label: 'RV2 annulés', value: (r) => r.rv2Canceled || 0 },
+                { label: '% annulation RV2', value: (r) => pct(r.rv2Canceled || 0, r.rv2Planned || 0) + '%' },
+                { label: 'Ventes', value: (r) => r.salesClosed || 0 },
+                { label: 'CA', value: (r) => r.revenueTotal || 0 },
+                { label: 'Taux closing', value: (r) => r.closingRate != null ? Math.round(r.closingRate * 100) + '%' : '' },
+            ]
+        }).parse(rows || []);
+        return Buffer.from(csv, 'utf8');
+    }
+    async buildSpotlightPDF(title, period, rows, columns, analysis) {
+        return await new Promise((resolve) => {
+            const doc = new pdfkit_1.default({ size: 'A4', margin: 36 });
+            const chunks = [];
+            doc.on('data', (c) => chunks.push(c));
+            doc.on('end', () => resolve(Buffer.concat(chunks)));
+            doc.fontSize(16).fillColor('#111').text(title, { underline: false });
+            doc.moveDown(0.2);
+            doc.fontSize(10).fillColor('#666').text(period);
+            doc.moveDown(0.6);
+            doc.fontSize(11).fillColor('#111').text('Analyse & recommandations', { bold: true });
+            doc.moveDown(0.2);
+            doc.fontSize(10).fillColor('#222').text(analysis, { align: 'left' });
+            doc.moveDown(0.8);
+            doc.fontSize(11).fillColor('#111').text('Tableau de performances');
+            doc.moveDown(0.3);
+            const startX = doc.x, startY = doc.y;
+            const colX = [];
+            let x = startX;
+            columns.forEach((c, i) => {
+                const w = c.width ?? 120;
+                colX.push(x);
+                doc.fontSize(9).fillColor('#333').text(c.header, x, startY, { width: w });
+                x += w + 8;
+            });
+            doc.moveTo(startX, startY + 14).lineTo(x - 8, startY + 14).strokeColor('#ddd').stroke();
+            doc.moveDown(0.2);
+            let y = startY + 18;
+            rows.forEach((r) => {
+                x = startX;
+                columns.forEach((c) => {
+                    const w = c.width ?? 120;
+                    const raw = r[c.key];
+                    const val = c.format ? c.format(raw) : (raw ?? '');
+                    doc.fontSize(9).fillColor('#000').text(String(val), x, y, { width: w });
+                    x += w + 8;
+                });
+                y += 14;
+                if (y > 780) {
+                    doc.addPage();
+                    y = 48;
+                }
+            });
+            doc.end();
+        });
+    }
+    buildSetterAnalysis(rows) {
+        if (!rows?.length)
+            return "Aucune donnée disponible sur la période.";
+        const totalLeads = rows.reduce((s, r) => s + (Number(r.leadsReceived) || 0), 0);
+        const totalPlanned = rows.reduce((s, r) => s + (Number(r.rv1PlannedOnHisLeads) || 0), 0);
+        const totalHonored = rows.reduce((s, r) => s + (Number(r.rv1HonoredOnHisLeads) || 0), 0);
+        const totalCanceled = rows.reduce((s, r) => s + (Number(r.rv1CanceledOnHisLeads) || 0), 0);
+        const qualRate = pct(totalPlanned, totalLeads);
+        const honorRate = pct(totalHonored, totalPlanned);
+        const cancelRate = pct(totalCanceled, totalPlanned);
+        const topByPlanned = [...rows].sort((a, b) => (b.rv1PlannedOnHisLeads || 0) - (a.rv1PlannedOnHisLeads || 0))[0];
+        const worstCancel = [...rows]
+            .map(r => ({ ...r, cancelRate: pct(r.rv1CanceledOnHisLeads || 0, r.rv1PlannedOnHisLeads || 0) }))
+            .sort((a, b) => (b.cancelRate - a.cancelRate))[0];
+        return [
+            `Sur la période : ${totalLeads} leads, ${totalPlanned} RV1 planifiés, ${totalHonored} honorés.`,
+            `Taux de qualification : ${qualRate}%. Taux de présence RV1 : ${honorRate}%. Taux d’annulation RV1 : ${cancelRate}%.`,
+            topByPlanned ? `Meilleur volume de RV1 : ${topByPlanned.name} (${topByPlanned.rv1PlannedOnHisLeads || 0}).` : '',
+            worstCancel ? `Plus fort taux d’annulation : ${worstCancel.name} (${worstCancel.cancelRate}%).` : '',
+            `Recommandations :`,
+            `• Renforcer le suivi des leads à faible TTFC (accélérer le 1er contact) ;`,
+            `• Analyser les sources des annulations (calendrier, qualification, objections) ;`,
+            `• Capitaliser sur les setters à fort volume pour partager scripts et SOP.`,
+        ].filter(Boolean).join('\n');
+    }
+    buildCloserAnalysis(rows) {
+        if (!rows?.length)
+            return "Aucune donnée disponible sur la période.";
+        const totalRv1P = rows.reduce((s, r) => s + (Number(r.rv1Planned) || 0), 0);
+        const totalRv1H = rows.reduce((s, r) => s + (Number(r.rv1Honored) || 0), 0);
+        const totalSales = rows.reduce((s, r) => s + (Number(r.salesClosed) || 0), 0);
+        const totalRv1C = rows.reduce((s, r) => s + (Number(r.rv1Canceled) || 0), 0);
+        const closingRate = pct(totalSales, totalRv1H);
+        const cancelRate = pct(totalRv1C, totalRv1P);
+        const topCloser = [...rows].sort((a, b) => (b.salesClosed || 0) - (a.salesClosed || 0))[0];
+        const bestPresence = [...rows]
+            .map(r => ({ ...r, presence: pct(r.rv1Honored || 0, r.rv1Planned || 0) }))
+            .sort((a, b) => (b.presence - a.presence))[0];
+        return [
+            `Sur la période : ${totalRv1P} RV1 planifiés, ${totalRv1H} honorés, ${totalSales} ventes.`,
+            `Taux de closing global : ${closingRate}%. Taux d’annulation RV1 : ${cancelRate}%.`,
+            topCloser ? `Top ventes : ${topCloser.name} (${topCloser.salesClosed} ventes).` : '',
+            bestPresence ? `Meilleure présence RV1 : ${bestPresence.name} (${bestPresence.presence}%).` : '',
+            `Recommandations :`,
+            `• Revoir les no-shows/annulations avec les setters (handoff & reminder) ;`,
+            `• Outiller les objections récurrentes (cheatsheets) ;`,
+            `• Allouer plus de volume aux closers > closing médian.`,
+        ].filter(Boolean).join('\n');
+    }
+    async exportSpotlightSettersPDF({ from, to }) {
+        const rows = await this.spotlightSetters(from, to) || [];
+        const totalLeads = rows.reduce((s, r) => s + (Number(r.leadsReceived) || 0), 0);
+        const totalP = rows.reduce((s, r) => s + (Number(r.rv1PlannedOnHisLeads) || 0), 0);
+        const totalH = rows.reduce((s, r) => s + (Number(r.rv1HonoredOnHisLeads) || 0), 0);
+        const totalC = rows.reduce((s, r) => s + (Number(r.rv1CanceledOnHisLeads) || 0), 0);
+        const qualRate = pct(totalP, Math.max(1, totalLeads));
+        const presence = pct(totalH, Math.max(1, totalP));
+        const cancel = pct(totalC, Math.max(1, totalP));
+        const topVol = [...rows].sort((a, b) => (b.rv1PlannedOnHisLeads || 0) - (a.rv1PlannedOnHisLeads || 0))[0];
+        const worstCancel = [...rows]
+            .map(r => ({ ...r, rate: pct(r.rv1CanceledOnHisLeads || 0, Math.max(1, r.rv1PlannedOnHisLeads || 0)) }))
+            .sort((a, b) => b.rate - a.rate)[0];
+        const analysisIntro = [
+            `Sur la période, ${totalLeads} leads enregistrés → ${totalP} RV1 planifiés → ${totalH} honorés.`,
+            `KPI globaux : qualification ${qualRate}%, présence RV1 ${presence}%, annulations ${cancel}%.`,
+            topVol ? `Plus fort volume : ${topVol.name} (${topVol.rv1PlannedOnHisLeads || 0} RV1 planifiés).` : '',
+            worstCancel ? `Annulations les plus élevées : ${worstCancel.name} (${worstCancel.rate}%).` : '',
+            `Focus actions : accélérer TTFC, calibrer la promesse amont, partager les scripts des meilleurs setters.`,
+        ].filter(Boolean).join(' ');
+        const columns = [
+            { key: 'name', header: 'Setter', width: 140 },
+            { key: 'leadsReceived', header: 'Leads', width: 55, align: 'right', format: (v) => String(v || 0) },
+            { key: 'rv1PlannedOnHisLeads', header: 'RV1 planifiés', width: 80, align: 'right', format: (v) => String(v || 0) },
+            { key: 'rv1HonoredOnHisLeads', header: 'RV1 honorés', width: 78, align: 'right', format: (v) => String(v || 0) },
+            { key: 'rv1CanceledOnHisLeads', header: 'RV1 annulés', width: 78, align: 'right', format: (v) => String(v || 0) },
+            { key: 'rv1CancelRateOnHisLeads', header: '% annul', width: 55, align: 'right', format: (v) => (v != null ? Math.round(v * 100) : 0) + '%' },
+            { key: 'salesFromHisLeads', header: 'Ventes', width: 55, align: 'right', format: (v) => String(v || 0) },
+            { key: 'revenueFromHisLeads', header: 'CA (€)', width: 70, align: 'right', format: (v) => Math.round(v || 0).toLocaleString('fr-FR') },
+            { key: 'ttfcAvgMinutes', header: 'TTFC (min)', width: 70, align: 'right', format: (v) => v == null ? '—' : String(v) },
+            { key: 'settingRate', header: 'T. setting', width: 70, align: 'right', format: (v) => v != null ? Math.round(v * 100) + '%' : '—' },
+        ];
+        return buildAdvancedPDF({
+            title: 'Spotlight Setters',
+            period: `Période : ${from || '—'} → ${to || '—'}`,
+            columns: columns,
+            rows,
+            analysisIntro,
+            perRowNotes: setterRowNote,
+        });
+    }
+    async exportSpotlightClosersPDF({ from, to }) {
+        const rows = await this.spotlightClosers(from, to) || [];
+        const totalP = rows.reduce((s, r) => s + (Number(r.rv1Planned) || 0), 0);
+        const totalH = rows.reduce((s, r) => s + (Number(r.rv1Honored) || 0), 0);
+        const totalSales = rows.reduce((s, r) => s + (Number(r.salesClosed) || 0), 0);
+        const totalCancel = rows.reduce((s, r) => s + (Number(r.rv1Canceled) || 0), 0);
+        const closing = pct(totalSales, Math.max(1, totalH));
+        const cancel = pct(totalCancel, Math.max(1, totalP));
+        const topSales = [...rows].sort((a, b) => (b.salesClosed || 0) - (a.salesClosed || 0))[0];
+        const bestPresence = [...rows]
+            .map(r => ({ ...r, presence: pct(r.rv1Honored || 0, Math.max(1, r.rv1Planned || 0)) }))
+            .sort((a, b) => b.presence - a.presence)[0];
+        const analysisIntro = [
+            `Sur la période : ${totalP} RV1 planifiés → ${totalH} honorés → ${totalSales} ventes.`,
+            `KPI globaux : closing ${closing}%, annulations RV1 ${cancel}%.`,
+            topSales ? `Top ventes : ${topSales.name} (${topSales.salesClosed} ventes).` : '',
+            bestPresence ? `Meilleure présence RV1 : ${bestPresence.name} (${bestPresence.presence}%).` : '',
+            `Focus actions : co-résolution des objections récurrentes, re-qualification amont, allocation de volume aux closers > médian.`,
+        ].filter(Boolean).join(' ');
+        const columns = [
+            { key: 'name', header: 'Closer', width: 150 },
+            { key: 'rv1Planned', header: 'RV1 planifiés', width: 80, align: 'right', format: (v) => String(v || 0) },
+            { key: 'rv1Honored', header: 'RV1 honorés', width: 78, align: 'right', format: (v) => String(v || 0) },
+            { key: 'rv1Canceled', header: 'RV1 annulés', width: 78, align: 'right', format: (v) => String(v || 0) },
+            { key: 'rv1CancelRate', header: '% annul RV1', width: 70, align: 'right', format: (v) => v != null ? Math.round(v * 100) + '%' : '—' },
+            { key: 'rv2Planned', header: 'RV2 planifiés', width: 78, align: 'right', format: (v) => String(v || 0) },
+            { key: 'rv2Honored', header: 'RV2 honorés', width: 78, align: 'right', format: (v) => String(v || 0) },
+            { key: 'rv2Canceled', header: 'RV2 annulés', width: 78, align: 'right', format: (v) => String(v || 0) },
+            { key: 'rv2CancelRate', header: '% annul RV2', width: 70, align: 'right', format: (v) => v != null ? Math.round(v * 100) + '%' : '—' },
+            { key: 'salesClosed', header: 'Ventes', width: 55, align: 'right', format: (v) => String(v || 0) },
+            { key: 'revenueTotal', header: 'CA (€)', width: 70, align: 'right', format: (v) => Math.round(v || 0).toLocaleString('fr-FR') },
+            { key: 'closingRate', header: 'T. closing', width: 65, align: 'right', format: (v) => v != null ? Math.round(v * 100) + '%' : '—' },
+        ];
+        return buildAdvancedPDF({
+            title: 'Spotlight Closers',
+            period: `Période : ${from || '—'} → ${to || '—'}`,
+            columns: columns,
+            rows,
+            analysisIntro,
+            perRowNotes: closerRowNote,
+        });
+    }
     async sumSpend(r) {
         const budgets = await this.prisma.budget.findMany({
-            where: { period: client_1.BudgetPeriod.WEEKLY },
+            where: { period: client_2.BudgetPeriod.WEEKLY },
         });
         if (!r.from && !r.to) {
             return budgets.reduce((s, b) => s + num(b.amount), 0);
@@ -148,138 +610,120 @@ let ReportingService = class ReportingService {
         }
         return out;
     }
+    async ttfcBySetter(from, to) {
+        const r = toRange(from, to);
+        if (!r.from || !r.to)
+            return new Map();
+        const rows = await this.prisma.$queryRaw(client_1.Prisma.sql `
+    WITH first_req AS (
+      SELECT DISTINCT ON (cr."leadId")
+             cr."leadId",
+             cr."requestedAt"
+      FROM "CallRequest" cr
+      WHERE cr."requestedAt" >= ${r.from} AND cr."requestedAt" <= ${r.to}
+      ORDER BY cr."leadId", cr."requestedAt" ASC
+    ),
+    first_attempt AS (
+      SELECT DISTINCT ON (ca."leadId")
+             ca."leadId",
+             ca."userId"     AS "setterId",
+             ca."startedAt"  AS "attemptAt",
+             fr."requestedAt" AS "requestedAt"
+      FROM first_req fr
+      JOIN "CallAttempt" ca
+        ON ca."leadId" = fr."leadId" AND ca."startedAt" >= fr."requestedAt"
+      JOIN "User" u
+        ON u."id" = ca."userId" AND u."role" = 'SETTER' AND u."isActive" = TRUE
+      ORDER BY ca."leadId", ca."startedAt" ASC
+    )
+    SELECT
+      fa."setterId"                           AS "setterId",
+      AVG(EXTRACT(EPOCH FROM (fa."attemptAt" - fa."requestedAt")) / 60.0)::numeric(10,2) AS avg,
+      COUNT(*)::int                           AS n
+    FROM first_attempt fa
+    WHERE fa."attemptAt" >= fa."requestedAt"
+    GROUP BY fa."setterId"
+  `);
+        const map = new Map();
+        for (const r0 of rows) {
+            map.set(r0.setterId, { avg: Number(r0.avg), n: r0.n });
+        }
+        return map;
+    }
+    async ttfcBySetterViaStages(from, to) {
+        const r = toRange(from, to);
+        if (!r.from || !r.to)
+            return new Map();
+        const rows = await this.prisma.$queryRaw(client_1.Prisma.sql `
+    WITH first_req AS (
+      SELECT DISTINCT ON (se."leadId")
+             se."leadId",
+             se."occurredAt" AS "requestedAt"
+      FROM "StageEvent" se
+      WHERE se."toStage" = ${client_1.Prisma.sql `'CALL_REQUESTED'::"LeadStage"`}
+        AND se."occurredAt" >= ${r.from}
+        AND se."occurredAt" <= ${r.to}
+      ORDER BY se."leadId", se."occurredAt" ASC
+    ),
+    first_attempt AS (
+      SELECT DISTINCT ON (se."leadId")
+             se."leadId",
+             se."occurredAt" AS "attemptAt"
+      FROM "StageEvent" se
+      JOIN first_req fr ON fr."leadId" = se."leadId"
+      WHERE se."toStage" = ${client_1.Prisma.sql `'CALL_ATTEMPT'::"LeadStage"`}
+        AND se."occurredAt" >= fr."requestedAt"
+      ORDER BY se."leadId", se."occurredAt" ASC
+    )
+    SELECT
+      l."setterId" AS "setterId",
+      AVG(EXTRACT(EPOCH FROM (fa."attemptAt" - fr."requestedAt")) / 60.0)::numeric(10,2) AS avg,
+      COUNT(*)::int AS n
+    FROM first_req fr
+    JOIN first_attempt fa ON fa."leadId" = fr."leadId"
+    JOIN "Lead" l ON l."id" = fr."leadId"
+    WHERE fa."attemptAt" >= fr."requestedAt" AND l."setterId" IS NOT NULL
+    GROUP BY l."setterId"
+  `);
+        const map = new Map();
+        for (const r0 of rows)
+            map.set(r0.setterId, { avg: Number(r0.avg), n: r0.n });
+        return map;
+    }
     async settersReport(from, to) {
         const r = toRange(from, to);
         const spend = await this.sumSpend(r);
         const setters = await this.prisma.user.findMany({
-            where: { role: client_1.Role.SETTER, isActive: true },
-            select: { id: true, firstName: true, email: true, role: true },
+            where: { role: client_2.Role.SETTER, isActive: true },
+            select: { id: true, firstName: true, email: true },
             orderBy: { firstName: 'asc' },
         });
-        const setterIds = new Set(setters.map((s) => s.id));
         const allLeads = await this.prisma.lead.findMany({
             where: between('createdAt', r),
             select: { id: true, setterId: true, createdAt: true },
         });
         const totalLeads = allLeads.length;
-        const rv1Events = await this.prisma.stageEvent.findMany({
-            where: {
-                toStage: client_1.LeadStage.RV1_HONORED,
-                ...between('occurredAt', r),
-            },
-            select: {
-                leadId: true,
-                lead: {
-                    select: { setterId: true },
-                },
-            },
-        });
-        const rv1FromHisLeadsBySetter = new Map();
-        for (const ev of rv1Events) {
-            if (!ev.lead || !ev.lead.setterId || !ev.leadId)
-                continue;
-            const sId = ev.lead.setterId;
-            if (!rv1FromHisLeadsBySetter.has(sId)) {
-                rv1FromHisLeadsBySetter.set(sId, new Set());
-            }
-            rv1FromHisLeadsBySetter.get(sId).add(ev.leadId);
-        }
-        const reqEvents = await this.prisma.leadEvent.findMany({
-            where: {
-                type: 'CALL_REQUESTED',
-                ...between('occurredAt', r),
-            },
-            orderBy: { occurredAt: 'asc' },
-            select: { leadId: true, occurredAt: true },
-        });
-        const firstReqByLead = new Map();
-        for (const ev of reqEvents) {
-            if (!ev.leadId)
-                continue;
-            if (!firstReqByLead.has(ev.leadId))
-                firstReqByLead.set(ev.leadId, ev.occurredAt);
-        }
-        const leadsWithRequest = Array.from(firstReqByLead.keys());
-        const attemptEvents = leadsWithRequest.length
-            ? await this.prisma.leadEvent.findMany({
-                where: {
-                    type: 'CALL_ATTEMPT',
-                    leadId: { in: leadsWithRequest },
-                },
-                orderBy: { occurredAt: 'asc' },
-                select: { leadId: true, occurredAt: true },
-            })
-            : [];
-        const firstAttemptEventByLead = new Map();
-        for (const ev of attemptEvents) {
-            if (!ev.leadId)
-                continue;
-            const reqAt = firstReqByLead.get(ev.leadId);
-            if (!reqAt)
-                continue;
-            if (ev.occurredAt < reqAt)
-                continue;
-            if (r.to && ev.occurredAt > r.to)
-                continue;
-            if (!firstAttemptEventByLead.has(ev.leadId)) {
-                firstAttemptEventByLead.set(ev.leadId, ev.occurredAt);
-            }
-        }
-        const ttfcBySetter = {};
-        const isSetter = (userId) => setterIds.has(userId);
-        for (const leadId of leadsWithRequest) {
-            const requestAt = firstReqByLead.get(leadId);
-            const attemptEventAt = firstAttemptEventByLead.get(leadId);
-            if (!requestAt || !attemptEventAt)
-                continue;
-            const endWindow = new Date(attemptEventAt.getTime() + 5 * 60 * 1000);
-            const ca = await this.prisma.callAttempt.findFirst({
-                where: {
-                    leadId,
-                    startedAt: { gte: requestAt, lte: endWindow },
-                },
-                orderBy: { startedAt: 'asc' },
-                select: { userId: true, startedAt: true },
-            });
-            let ownerSetterId = null;
-            if (ca?.userId && isSetter(ca.userId))
-                ownerSetterId = ca.userId;
-            if (!ownerSetterId) {
-                const l = await this.prisma.lead.findUnique({
-                    where: { id: leadId },
-                    select: { setterId: true },
-                });
-                if (l?.setterId && isSetter(l.setterId))
-                    ownerSetterId = l.setterId;
-            }
-            if (!ownerSetterId)
-                continue;
-            const diffMin = Math.round((attemptEventAt.getTime() - requestAt.getTime()) / 60000);
-            if (diffMin < 0)
-                continue;
-            const a = ttfcBySetter[ownerSetterId] || { sum: 0, n: 0 };
-            a.sum += diffMin;
-            a.n += 1;
-            ttfcBySetter[ownerSetterId] = a;
-        }
+        const ttfcMap = await this.ttfcBySetterViaStages(from, to);
         const rows = [];
         for (const s of setters) {
             const leads = allLeads.filter((l) => l.setterId === s.id);
-            const leadIds = leads.map((l) => l.id);
-            const leadsReceived = leadIds.length;
+            const leadsReceived = leads.length;
+            const [rv1PlannedFromHisLeads, rv1CanceledFromHisLeads, rv1FromHisLeads] = await Promise.all([
+                this.countSE({ stages: [client_2.LeadStage.RV1_PLANNED], r, by: { setterId: s.id }, distinctByLead: true }),
+                this.countSE({ stages: [client_2.LeadStage.RV1_CANCELED], r, by: { setterId: s.id }, distinctByLead: true }),
+                this.countSE({ stages: [client_2.LeadStage.RV1_HONORED], r, by: { setterId: s.id }, distinctByLead: true }),
+            ]);
             const rv0Count = await this.prisma.appointment.count({
-                where: { userId: s.id, type: client_1.AppointmentType.RV0, ...between('scheduledAt', r) },
+                where: { userId: s.id, type: client_2.AppointmentType.RV0, ...between('scheduledAt', r) },
             });
-            const rv1Set = rv1FromHisLeadsBySetter.get(s.id);
-            const rv1FromHisLeads = rv1Set ? rv1Set.size : 0;
-            const ttfcAgg = ttfcBySetter[s.id];
-            const ttfcAvgMinutes = ttfcAgg?.n ? Math.round(ttfcAgg.sum / ttfcAgg.n) : null;
+            const ttfcAgg = ttfcMap.get(s.id);
+            const ttfcAvgMinutes = ttfcAgg ? Math.round(ttfcAgg.avg) : null;
             const wonWhere = await this.wonFilter(r);
             wonWhere.setterId = s.id;
-            const wonAgg = await this.prisma.lead.aggregate({
-                _sum: { saleValue: true },
-                where: wonWhere,
-            });
+            const [wonAgg, salesFromHisLeads] = await Promise.all([
+                this.prisma.lead.aggregate({ _sum: { saleValue: true }, where: wonWhere }),
+                this.prisma.lead.count({ where: wonWhere }),
+            ]);
             const revenueFromHisLeads = num(wonAgg._sum?.saleValue ?? 0);
             const spendShare = totalLeads && leadsReceived
                 ? spend * (leadsReceived / totalLeads)
@@ -303,71 +747,99 @@ let ReportingService = class ReportingService {
                 rv1FromHisLeads: num(rv1FromHisLeads),
                 ttfcAvgMinutes,
                 revenueFromHisLeads,
+                salesFromHisLeads: num(salesFromHisLeads),
                 spendShare: Number(spendShare.toFixed(2)),
-                cpl,
-                cpRv0,
-                cpRv1,
-                roas,
+                cpl, cpRv0, cpRv1, roas,
+                rv1PlannedFromHisLeads: num(rv1PlannedFromHisLeads),
+                rv1CanceledFromHisLeads: num(rv1CanceledFromHisLeads),
             });
         }
         return rows;
     }
+    async perDayFromStageEvents(toStages, from, to, tz = 'Europe/Paris') {
+        const r = toRange(from, to);
+        const stageEnums = toStages.map(s => s);
+        if (!r.from || !r.to) {
+            const total = await this.prisma.stageEvent.count({ where: { toStage: { in: stageEnums } } });
+            return { total: num(total), byDay: [] };
+        }
+        const stageList = client_1.Prisma.join(stageEnums.map(s => client_1.Prisma.sql `${s}::"LeadStage"`));
+        const rows = await this.prisma.$queryRaw(client_1.Prisma.sql `
+      SELECT
+        to_char(DATE_TRUNC('day', (se."occurredAt" AT TIME ZONE ${tz})), 'YYYY-MM-DD') AS day,
+        COUNT(*)::int AS count
+      FROM "StageEvent" se
+      WHERE se."toStage" = ANY(ARRAY[${stageList}]::"LeadStage"[])
+        AND ${whereLocalDay('occurredAt', from, to, tz)}
+      GROUP BY 1
+      ORDER BY 1 ASC
+    `);
+        const map = new Map(rows.map(r0 => [r0.day, num(r0.count)]));
+        const byDay = daysSpanLocal(from, to).map(d => ({ day: d, count: map.get(d) ?? 0 }));
+        const total = byDay.reduce((s, r0) => s + r0.count, 0);
+        return { total, byDay };
+    }
+    async stageSeries(stage, from, to, tz = 'Europe/Paris') {
+        return this.perDayFromStageEvents([stage], from, to, tz);
+    }
+    async canceledDaily(from, to, tz = 'Europe/Paris') {
+        if (!from || !to) {
+            const total = await this.prisma.appointment.count({ where: { status: client_2.AppointmentStatus.CANCELED } });
+            return { total: num(total), byDay: [] };
+        }
+        const byDay = [];
+        for (const day of daysSpanLocal(from, to)) {
+            const daySql = client_1.Prisma.sql `${day}::date`;
+            const [rv0, rv1, rv2] = await Promise.all([
+                this.prisma.$queryRaw(client_1.Prisma.sql `
+        SELECT COUNT(*)::int AS n
+        FROM "Appointment"
+        WHERE "type" = 'RV0'
+          AND "status" = 'CANCELED'
+          AND (("scheduledAt" AT TIME ZONE ${tz})::date = ${daySql})
+      `),
+                this.prisma.$queryRaw(client_1.Prisma.sql `
+        SELECT COUNT(*)::int AS n
+        FROM "Appointment"
+        WHERE "type" = 'RV1'
+          AND "status" = 'CANCELED'
+          AND (("scheduledAt" AT TIME ZONE ${tz})::date = ${daySql})
+      `),
+                this.prisma.$queryRaw(client_1.Prisma.sql `
+        SELECT COUNT(*)::int AS n
+        FROM "Appointment"
+        WHERE "type" = 'RV2'
+          AND "status" = 'CANCELED'
+          AND (("scheduledAt" AT TIME ZONE ${tz})::date = ${daySql})
+      `),
+            ]);
+            const r0 = num(rv0?.[0]?.n ?? 0);
+            const r1 = num(rv1?.[0]?.n ?? 0);
+            const r2 = num(rv2?.[0]?.n ?? 0);
+            byDay.push({ day, RV0_CANCELED: r0, RV1_CANCELED: r1, RV2_CANCELED: r2, total: r0 + r1 + r2 });
+        }
+        const total = byDay.reduce((s, x) => s + num(x.total), 0);
+        return { total, byDay };
+    }
     async closersReport(from, to) {
         const r = toRange(from, to);
         const closers = await this.prisma.user.findMany({
-            where: { role: client_1.Role.CLOSER, isActive: true },
+            where: { role: client_2.Role.CLOSER, isActive: true },
             select: { id: true, firstName: true, email: true },
             orderBy: { firstName: 'asc' },
         });
         const spend = await this.sumSpend(r);
-        const rv1Events = await this.prisma.stageEvent.findMany({
-            where: {
-                toStage: client_1.LeadStage.RV1_HONORED,
-                ...between('occurredAt', r),
-            },
-            select: {
-                leadId: true,
-                lead: {
-                    select: { closerId: true },
-                },
-            },
-        });
-        const rv1HonoredByCloser = new Map();
-        for (const ev of rv1Events) {
-            if (!ev.lead || !ev.lead.closerId || !ev.leadId)
-                continue;
-            const cId = ev.lead.closerId;
-            if (!rv1HonoredByCloser.has(cId)) {
-                rv1HonoredByCloser.set(cId, new Set());
-            }
-            rv1HonoredByCloser.get(cId).add(ev.leadId);
-        }
         const rows = [];
         for (const c of closers) {
-            const rv1Planned = await this.prisma.appointment.count({
-                where: { userId: c.id, type: client_1.AppointmentType.RV1, ...between('scheduledAt', r) },
-            });
-            const rv1Set = rv1HonoredByCloser.get(c.id);
-            const rv1Honored = rv1Set ? rv1Set.size : 0;
-            const rv1NoShow = await this.prisma.appointment.count({
-                where: {
-                    userId: c.id,
-                    type: client_1.AppointmentType.RV1,
-                    status: client_1.AppointmentStatus.NO_SHOW,
-                    ...between('scheduledAt', r),
-                },
-            });
-            const rv2Planned = await this.prisma.appointment.count({
-                where: { userId: c.id, type: client_1.AppointmentType.RV2, ...between('scheduledAt', r) },
-            });
-            const rv2Honored = await this.prisma.appointment.count({
-                where: {
-                    userId: c.id,
-                    type: client_1.AppointmentType.RV2,
-                    status: client_1.AppointmentStatus.HONORED,
-                    ...between('scheduledAt', r),
-                },
-            });
+            const [rv1Planned, rv1HonoredCount, rv1NoShow, rv1Canceled, rv2Planned, rv2Honored, rv2Canceled,] = await Promise.all([
+                this.countSE({ stages: [client_2.LeadStage.RV1_PLANNED], r, by: { closerId: c.id } }),
+                this.countSE({ stages: [client_2.LeadStage.RV1_HONORED], r, by: { closerId: c.id } }),
+                this.countSE({ stages: [client_2.LeadStage.RV1_NO_SHOW], r, by: { closerId: c.id } }),
+                this.countSE({ stages: [client_2.LeadStage.RV1_CANCELED], r, by: { closerId: c.id } }),
+                this.countSE({ stages: [client_2.LeadStage.RV2_PLANNED], r, by: { closerId: c.id } }),
+                this.countSE({ stages: [client_2.LeadStage.RV2_HONORED], r, by: { closerId: c.id } }),
+                this.countSE({ stages: [client_2.LeadStage.RV2_CANCELED], r, by: { closerId: c.id } }),
+            ]);
             const wonWhere = await this.wonFilter(r);
             wonWhere.closerId = c.id;
             const wonAgg = await this.prisma.lead.aggregate({
@@ -379,15 +851,17 @@ let ReportingService = class ReportingService {
             const roasPlanned = rv1Planned
                 ? Number(((revenueTotal || 0) / (spend || 1) / rv1Planned).toFixed(2))
                 : null;
-            const roasHonored = rv1Honored
-                ? Number(((revenueTotal || 0) / (spend || 1) / rv1Honored).toFixed(2))
+            const roasHonored = rv1HonoredCount
+                ? Number(((revenueTotal || 0) / (spend || 1) / rv1HonoredCount).toFixed(2))
                 : null;
+            const rv1CancelRate = rv1Planned ? Number((rv1Canceled / rv1Planned).toFixed(4)) : null;
+            const rv2CancelRate = rv2Planned ? Number((rv2Canceled / rv2Planned).toFixed(4)) : null;
             rows.push({
                 userId: c.id,
                 name: c.firstName,
                 email: c.email,
                 rv1Planned: num(rv1Planned),
-                rv1Honored: num(rv1Honored),
+                rv1Honored: num(rv1HonoredCount),
                 rv1NoShow: num(rv1NoShow),
                 rv2Planned: num(rv2Planned),
                 rv2Honored: num(rv2Honored),
@@ -395,8 +869,62 @@ let ReportingService = class ReportingService {
                 revenueTotal,
                 roasPlanned,
                 roasHonored,
+                rv1Canceled: num(rv1Canceled),
+                rv2Canceled: num(rv2Canceled),
+                rv1CancelRate,
+                rv2CancelRate,
             });
         }
+        rows.sort((a, b) => b.revenueTotal - a.revenueTotal ||
+            b.salesClosed - a.salesClosed);
+        return rows;
+    }
+    async spotlightSetters(from, to) {
+        const base = await this.settersReport(from, to);
+        const rows = base.map((r) => {
+            const rv1CancelRate = r.rv1PlannedFromHisLeads ? Number((r.rv1CanceledFromHisLeads / r.rv1PlannedFromHisLeads).toFixed(4)) : null;
+            const settingRate = r.leadsReceived ? Number((r.rv1PlannedFromHisLeads / r.leadsReceived).toFixed(4)) : null;
+            return {
+                userId: r.userId,
+                name: r.name,
+                email: r.email,
+                rv1PlannedOnHisLeads: r.rv1PlannedFromHisLeads,
+                rv1DoneOnHisLeads: r.rv1FromHisLeads,
+                rv1CanceledOnHisLeads: r.rv1CanceledFromHisLeads,
+                rv1CancelRate,
+                salesFromHisLeads: r.salesFromHisLeads,
+                revenueFromHisLeads: r.revenueFromHisLeads,
+                settingRate,
+                leadsReceived: r.leadsReceived,
+                ttfcAvgMinutes: r.ttfcAvgMinutes,
+            };
+        });
+        rows.sort((a, b) => b.revenueFromHisLeads - a.revenueFromHisLeads ||
+            b.rv1PlannedOnHisLeads - a.rv1PlannedOnHisLeads);
+        return rows;
+    }
+    async spotlightClosers(from, to) {
+        const base = await this.closersReport(from, to);
+        const rows = base.map((r) => {
+            const closingRate = r.rv1Honored ? Number((r.salesClosed / r.rv1Honored).toFixed(4)) : null;
+            return {
+                userId: r.userId,
+                name: r.name,
+                email: r.email,
+                rv1Planned: r.rv1Planned,
+                rv1Honored: r.rv1Honored,
+                rv1Canceled: r.rv1Canceled,
+                rv1CancelRate: r.rv1CancelRate,
+                rv2Planned: r.rv2Planned,
+                rv2Canceled: r.rv2Canceled,
+                rv2CancelRate: r.rv2CancelRate,
+                salesClosed: r.salesClosed,
+                revenueTotal: r.revenueTotal,
+                closingRate,
+            };
+        });
+        rows.sort((a, b) => b.revenueTotal - a.revenueTotal ||
+            b.salesClosed - a.salesClosed);
         return rows;
     }
     async duosReport(from, to) {
@@ -444,15 +972,15 @@ let ReportingService = class ReportingService {
                 continue;
             const rv1Planned = await this.prisma.appointment.count({
                 where: {
-                    type: client_1.AppointmentType.RV1,
+                    type: client_2.AppointmentType.RV1,
                     leadId: { in: duo.leadIds },
                 },
             });
             const rv1Honored = await this.prisma.appointment.count({
                 where: {
-                    type: client_1.AppointmentType.RV1,
+                    type: client_2.AppointmentType.RV1,
                     leadId: { in: duo.leadIds },
-                    status: client_1.AppointmentStatus.HONORED,
+                    status: client_2.AppointmentStatus.HONORED,
                 },
             });
             duo.rv1Planned = num(rv1Planned);
@@ -548,17 +1076,23 @@ let ReportingService = class ReportingService {
     }
     async funnelFromStages(r) {
         const get = (keys) => this.countEnteredInStages(keys, r);
-        const [leadsCreated, callReq, calls, answered, setterNoShow, rv0P, rv0H, rv0NS, rv1P, rv1H, rv1NS, rv2P, rv2H, notQual, lost, wonCount,] = await Promise.all([
+        const [leadsCreated, callReq, calls, answered, setterNoShow, rv0P, rv0H, rv0NS, rv0C, rv1P, rv1H, rv1NS, rv1C, rv2P, rv2H, rv2C, notQual, lost, wonCount, appointmentCanceled,] = await Promise.all([
             this.prisma.lead.count({ where: between('createdAt', r) }),
             get(['CALL_REQUESTED']),
             get(['CALL_ATTEMPT']),
             get(['CALL_ANSWERED']),
             get(['SETTER_NO_SHOW']),
-            get(['RV0_PLANNED']), get(['RV0_HONORED']), get(['RV0_NO_SHOW']),
-            get(['RV1_PLANNED']), get(['RV1_HONORED']), get(['RV1_NO_SHOW']),
-            get(['RV2_PLANNED']), get(['RV2_HONORED']),
+            get(['RV0_PLANNED']), get(['RV0_HONORED']), get(['RV0_NO_SHOW']), get(['RV0_CANCELED']),
+            get(['RV1_PLANNED']), get(['RV1_HONORED']), get(['RV1_NO_SHOW']), get(['RV1_CANCELED']),
+            get(['RV2_PLANNED']), get(['RV2_HONORED']), get(['RV2_CANCELED']),
             get(['NOT_QUALIFIED']), get(['LOST']),
-            (async () => (await this.wonFilter(r), await this.countEnteredInStages(['WON'], r)))(),
+            (async () => {
+                const where = await this.wonFilter(r);
+                return this.prisma.lead.count({ where });
+            })(),
+            this.prisma.appointment.count({
+                where: { status: client_2.AppointmentStatus.CANCELED, ...between('scheduledAt', r) },
+            }),
         ]);
         return {
             leads: num(leadsCreated),
@@ -569,14 +1103,18 @@ let ReportingService = class ReportingService {
             rv0Planned: num(rv0P),
             rv0Honored: num(rv0H),
             rv0NoShow: num(rv0NS),
+            rv0Canceled: num(rv0C),
             rv1Planned: num(rv1P),
             rv1Honored: num(rv1H),
             rv1NoShow: num(rv1NS),
+            rv1Canceled: num(rv1C),
             rv2Planned: num(rv2P),
             rv2Honored: num(rv2H),
+            rv2Canceled: num(rv2C),
             notQualified: num(notQual),
             lost: num(lost),
             wonCount: num(wonCount),
+            appointmentCanceled: num(appointmentCanceled),
         };
     }
     async funnel(from, to) {
@@ -624,36 +1162,30 @@ let ReportingService = class ReportingService {
         }
         return out;
     }
-    async perDayFromStages(keys, from, to) {
-        const r = toRange(from, to);
+    async perDayFromStages(keys, from, to, tz = 'Europe/Paris') {
         const ids = await this.stageIdsForKeys(keys);
-        if (!r.from || !r.to) {
-            const where = {
-                AND: [
-                    { OR: [{ stage: { in: keys } }, ...(ids.length ? [{ stageId: { in: ids } }] : [])] },
-                ],
-            };
+        if (!from || !to) {
+            const where = { OR: [{ stage: { in: keys } }, ...(ids.length ? [{ stageId: { in: ids } }] : [])] };
             const total = await this.prisma.lead.count({ where });
             return { total: num(total), byDay: [] };
         }
-        const days = [];
-        let total = 0;
-        const start = new Date(r.from);
-        const end = new Date(r.to);
-        for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
-            const d0 = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
-            const d1 = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 23, 59, 59, 999));
-            const where = {
-                AND: [
-                    { OR: [{ stage: { in: keys } }, ...(ids.length ? [{ stageId: { in: ids } }] : [])] },
-                    { stageUpdatedAt: { gte: d0, lte: d1 } },
-                ],
-            };
-            const n = await this.prisma.lead.count({ where });
-            total += num(n);
-            days.push({ day: d0.toISOString(), count: num(n) });
-        }
-        return { total, byDay: days };
+        const rows = await this.prisma.$queryRaw(client_1.Prisma.sql `
+    SELECT
+      to_char(DATE_TRUNC('day', (l."stageUpdatedAt" AT TIME ZONE ${tz})), 'YYYY-MM-DD') AS day,
+      COUNT(*)::int AS count
+    FROM "Lead" l
+    WHERE ( ${client_1.Prisma.join([
+            client_1.Prisma.sql `l."stage" = ANY(${client_1.Prisma.sql `ARRAY[${client_1.Prisma.join(keys.map(k => client_1.Prisma.sql `${k}::"LeadStage"`))}]::"LeadStage"[]`})`,
+            ...(ids.length ? [client_1.Prisma.sql `l."stageId" = ANY(${client_1.Prisma.sql `ARRAY[${client_1.Prisma.join(ids)}]`})`] : []),
+        ], ' OR ')} )
+      AND ${whereLocalDay('stageUpdatedAt', from, to, tz)}
+    GROUP BY 1
+    ORDER BY 1 ASC
+  `);
+        const map = new Map(rows.map(r0 => [r0.day, num(r0.count)]));
+        const byDay = daysSpanLocal(from, to).map(d => ({ day: d, count: map.get(d) ?? 0 }));
+        const total = byDay.reduce((s, r0) => s + r0.count, 0);
+        return { total, byDay };
     }
     async metricCallRequests(from, to) {
         return this.perDayFromStages(['CALL_REQUESTED'], from, to);
@@ -663,6 +1195,15 @@ let ReportingService = class ReportingService {
     }
     async metricCallsAnswered(from, to) {
         return this.perDayFromStages(['CALL_ANSWERED'], from, to);
+    }
+    async metricCallsCanceled0(f, t, tz = 'Europe/Paris') {
+        return this.perDayFromStageEvents([client_2.LeadStage.RV0_CANCELED], f, t, tz);
+    }
+    async metricCallsCanceled1(f, t, tz = 'Europe/Paris') {
+        return this.perDayFromStageEvents([client_2.LeadStage.RV1_CANCELED], f, t, tz);
+    }
+    async metricCallsCanceled2(f, t, tz = 'Europe/Paris') {
+        return this.perDayFromStageEvents([client_2.LeadStage.RV2_CANCELED], f, t, tz);
     }
     async drillLeadsReceived(args) {
         const r = toRange(args.from, args.to);
@@ -798,8 +1339,8 @@ let ReportingService = class ReportingService {
         if (args.answered) {
             const r = toRange(args.from, args.to);
             const rows = await this.prisma.callAttempt.findMany({
-                where: { outcome: client_1.CallOutcome.ANSWERED, ...between('startedAt', r) },
-                orderBy: { startedAt: 'desc' },
+                where: { outcome: client_2.CallOutcome.ANSWERED, ...between('startedAt', r) },
+                orderBy: { startedAt: 'asc' },
                 take: args.limit,
                 select: {
                     startedAt: true, outcome: true, userId: true,
@@ -834,7 +1375,7 @@ let ReportingService = class ReportingService {
         if (args.setterNoShow) {
             const r = toRange(args.from, args.to);
             const rows = await this.prisma.lead.findMany({
-                where: { stage: client_1.LeadStage.SETTER_NO_SHOW, ...between('stageUpdatedAt', r) },
+                where: { stage: client_2.LeadStage.SETTER_NO_SHOW, ...between('stageUpdatedAt', r) },
                 orderBy: { stageUpdatedAt: 'desc' },
                 take: args.limit,
                 select: {

@@ -1,7 +1,8 @@
 import { CreateProspectEventDto } from './dto/create-prospect-event.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { LeadStage } from '@prisma/client';
-export type PipelineMetricKey = 'LEADS_RECEIVED' | 'CALL_REQUESTED' | 'CALL_ATTEMPT' | 'CALL_ANSWERED' | 'SETTER_NO_SHOW' | 'FOLLOW_UP' | 'RV0_PLANNED' | 'RV0_HONORED' | 'RV0_NO_SHOW' | 'RV1_PLANNED' | 'RV1_HONORED' | 'RV1_NO_SHOW' | 'RV1_POSTPONED' | 'RV2_PLANNED' | 'RV2_HONORED' | 'RV2_POSTPONED' | 'NOT_QUALIFIED' | 'LOST' | 'WON';
+import { StageEventsService } from '../modules/leads/stage-events.service';
+export type PipelineMetricKey = 'LEADS_RECEIVED' | 'CALL_REQUESTED' | 'CALL_ATTEMPT' | 'CALL_ANSWERED' | 'SETTER_NO_SHOW' | 'FOLLOW_UP' | 'RV0_PLANNED' | 'RV0_HONORED' | 'RV0_NO_SHOW' | 'RV0_CANCELED' | 'RV1_PLANNED' | 'RV1_HONORED' | 'RV1_NO_SHOW' | 'RV1_POSTPONED' | 'RV1_CANCELED' | 'RV2_PLANNED' | 'RV2_HONORED' | 'RV2_POSTPONED' | 'RV2_CANCELED' | 'NOT_QUALIFIED' | 'LOST' | 'WON' | 'APPOINTMENT_CANCELED';
 type OpsColumn = {
     key: PipelineMetricKey;
     label: string;
@@ -44,7 +45,8 @@ type CreateLeadBody = {
 };
 export declare class ProspectsService {
     private prisma;
-    constructor(prisma: PrismaService);
+    private stageEvents;
+    constructor(prisma: PrismaService, stageEvents: StageEventsService);
     getMetricsCatalog(): {
         ok: boolean;
         catalog: {
@@ -136,6 +138,37 @@ export declare class ProspectsService {
                 closerId: string | null;
             })[];
         }>;
+        extraByColumnKey: Record<string, ({
+            setter: {
+                id: string;
+                email: string;
+                firstName: string;
+            } | null;
+            closer: {
+                id: string;
+                email: string;
+                firstName: string;
+            } | null;
+        } & {
+            id: string;
+            email: string | null;
+            firstName: string;
+            lastName: string | null;
+            createdAt: Date;
+            updatedAt: Date;
+            stage: import("@prisma/client").$Enums.LeadStage;
+            ghlContactId: string | null;
+            phone: string | null;
+            tag: string | null;
+            source: string | null;
+            stageUpdatedAt: Date;
+            stageId: string | null;
+            boardColumnKey: string | null;
+            opportunityValue: number | null;
+            saleValue: number | null;
+            setterId: string | null;
+            closerId: string | null;
+        })[]>;
     }>;
     private ensureNonNegative;
     moveStage(id: string, body: MoveStageBody): Promise<{
@@ -329,6 +362,26 @@ export declare class ProspectsService {
     }>;
     addEvent(leadId: string, dto: CreateProspectEventDto): Promise<{
         ok: boolean;
+    }>;
+    updateBoardColumn(id: string, columnKey: string | null): Promise<{
+        id: string;
+        email: string | null;
+        firstName: string;
+        lastName: string | null;
+        createdAt: Date;
+        updatedAt: Date;
+        stage: import("@prisma/client").$Enums.LeadStage;
+        ghlContactId: string | null;
+        phone: string | null;
+        tag: string | null;
+        source: string | null;
+        stageUpdatedAt: Date;
+        stageId: string | null;
+        boardColumnKey: string | null;
+        opportunityValue: number | null;
+        saleValue: number | null;
+        setterId: string | null;
+        closerId: string | null;
     }>;
 }
 export {};

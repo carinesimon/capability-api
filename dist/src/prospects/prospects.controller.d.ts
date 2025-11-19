@@ -47,6 +47,37 @@ export declare class ProspectsController {
                 closerId: string | null;
             })[];
         }>;
+        extraByColumnKey: Record<string, ({
+            setter: {
+                id: string;
+                email: string;
+                firstName: string;
+            } | null;
+            closer: {
+                id: string;
+                email: string;
+                firstName: string;
+            } | null;
+        } & {
+            id: string;
+            email: string | null;
+            firstName: string;
+            lastName: string | null;
+            createdAt: Date;
+            updatedAt: Date;
+            stage: import("@prisma/client").$Enums.LeadStage;
+            ghlContactId: string | null;
+            phone: string | null;
+            tag: string | null;
+            source: string | null;
+            stageUpdatedAt: Date;
+            stageId: string | null;
+            boardColumnKey: string | null;
+            opportunityValue: number | null;
+            saleValue: number | null;
+            setterId: string | null;
+            closerId: string | null;
+        })[]>;
     }>;
     getColumnsConfig(): Promise<{
         ok: boolean;
@@ -165,6 +196,11 @@ export declare class ProspectsController {
             setterId: string | null;
             closerId: string | null;
         };
+    }>;
+    setBoardColumn(id: string, body: {
+        columnKey?: string | null;
+    }): Promise<{
+        ok: boolean;
     }>;
     updateOne(id: string, body: {
         firstName?: string;

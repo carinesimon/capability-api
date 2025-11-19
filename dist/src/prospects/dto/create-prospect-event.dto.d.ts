@@ -12,13 +12,16 @@ export declare enum StageDto {
     RV1_NO_SHOW = "RV1_NO_SHOW",
     RV2_PLANIFIE = "RV2_PLANIFIE",
     RV2_HONORE = "RV2_HONORE",
+    RV0_ANNULE = "RV0_CANCELED",
+    RV1_ANNULE = "RV1_CANCELED",
+    RV2_ANNULE = "RV2_CANCELED",
     WON = "WON",
     LOST = "LOST",
     NOT_QUALIFIED = "NOT_QUALIFIED"
 }
 export declare class CreateProspectEventDto {
     type: "STAGE_ENTERED" | "STAGE_LEFT" | "NOTE";
-    stage?: StageDto;
+    stage?: string;
     status?: string;
     occurredAt?: string;
 }

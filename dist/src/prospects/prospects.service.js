@@ -14,6 +14,7 @@ const common_1 = require("@nestjs/common");
 const create_prospect_event_dto_1 = require("./dto/create-prospect-event.dto");
 const prisma_service_1 = require("../prisma/prisma.service");
 const client_1 = require("@prisma/client");
+const stage_events_service_1 = require("../modules/leads/stage-events.service");
 const DEFAULT_METRICS = [
     { key: 'LEADS_RECEIVED', label: 'Leads reçus', sourcePath: 'funnel.totals.leads', order: 0, enabled: true },
     { key: 'CALL_REQUESTED', label: 'Demandes d’appel', sourcePath: 'funnel.totals.callRequests', order: 1, enabled: true },
@@ -31,9 +32,13 @@ const DEFAULT_METRICS = [
     { key: 'RV2_PLANNED', label: 'RV2 planifiés', sourcePath: 'funnel.totals.rv2Planned', order: 13, enabled: true },
     { key: 'RV2_HONORED', label: 'RV2 honorés', sourcePath: 'funnel.totals.rv2Honored', order: 14, enabled: true },
     { key: 'RV2_POSTPONED', label: 'RV2 reportés', sourcePath: 'funnel.totals.rv2Postponed', order: 15, enabled: true },
-    { key: 'NOT_QUALIFIED', label: 'Non qualifiés', sourcePath: 'funnel.totals.notQualified', order: 16, enabled: true },
-    { key: 'LOST', label: 'Perdus', sourcePath: 'funnel.totals.lost', order: 17, enabled: true },
-    { key: 'WON', label: 'Ventes (WON)', sourcePath: 'funnel.totals.wonCount', order: 18, enabled: true },
+    { key: 'APPOINTMENT_CANCELED', label: 'RDV annulés', sourcePath: 'funnel.totals.appointmentCanceled', order: 16, enabled: true },
+    { key: 'NOT_QUALIFIED', label: 'Non qualifiés', sourcePath: 'funnel.totals.notQualified', order: 17, enabled: true },
+    { key: 'LOST', label: 'Perdus', sourcePath: 'funnel.totals.lost', order: 18, enabled: true },
+    { key: 'WON', label: 'Ventes (WON)', sourcePath: 'funnel.totals.wonCount', order: 19, enabled: true },
+    { key: 'RV0_CANCELED', label: 'RV0 annulés', sourcePath: 'funnel.totals.rv0Canceled', order: 8.5, enabled: false },
+    { key: 'RV1_CANCELED', label: 'RV1 annulés', sourcePath: 'funnel.totals.rv1Canceled', order: 11.5, enabled: true },
+    { key: 'RV2_CANCELED', label: 'RV2 annulés', sourcePath: 'funnel.totals.rv2Canceled', order: 15.5, enabled: false },
 ];
 const STAGE_TO_EVENT = {
     LEADS_RECEIVED: 'LEAD_CREATED',
@@ -45,13 +50,16 @@ const STAGE_TO_EVENT = {
     RV0_PLANNED: 'APPOINTMENT_PLANNED_RV0',
     RV0_HONORED: 'APPOINTMENT_HONORED_RV0',
     RV0_NO_SHOW: 'APPOINTMENT_NOSHOW_RV0',
+    RV0_CANCELED: 'APPOINTMENT_CANCELED_RV0',
     RV1_PLANNED: 'APPOINTMENT_PLANNED_RV1',
     RV1_HONORED: 'APPOINTMENT_HONORED_RV1',
     RV1_NO_SHOW: 'APPOINTMENT_NOSHOW_RV1',
     RV1_POSTPONED: 'APPOINTMENT_POSTPONED_RV1',
+    RV1_CANCELED: 'APPOINTMENT_CANCELED_RV1',
     RV2_PLANNED: 'APPOINTMENT_PLANNED_RV2',
     RV2_HONORED: 'APPOINTMENT_HONORED_RV2',
     RV2_POSTPONED: 'APPOINTMENT_POSTPONED_RV2',
+    RV2_CANCELED: 'APPOINTMENT_CANCELED_RV2',
     NOT_QUALIFIED: 'NOT_QUALIFIED',
     LOST: 'LOST',
     WON: 'WON',
@@ -63,6 +71,9 @@ const EVENT_BASED_STAGES = [
     'SETTER_NO_SHOW',
     'NOT_QUALIFIED',
     'LOST',
+    'RV0_CANCELED',
+    'RV1_CANCELED',
+    'RV2_CANCELED',
 ];
 const num = (v) => {
     const n = Number(v);
@@ -97,8 +108,10 @@ function between(field, r) {
 }
 let ProspectsService = class ProspectsService {
     prisma;
-    constructor(prisma) {
+    stageEvents;
+    constructor(prisma, stageEvents) {
         this.prisma = prisma;
+        this.stageEvents = stageEvents;
     }
     getMetricsCatalog() {
         return {
@@ -111,17 +124,14 @@ let ProspectsService = class ProspectsService {
     async computePipelineMetrics(from, to) {
         const r = toRange(from, to);
         const metrics = {};
-        for (const m of DEFAULT_METRICS) {
+        for (const m of DEFAULT_METRICS)
             metrics[m.key] = 0;
-        }
-        const leadsReceived = await this.prisma.lead.count({
+        metrics.LEADS_RECEIVED = await this.prisma.lead.count({
             where: between('createdAt', r),
         });
-        metrics.LEADS_RECEIVED = leadsReceived;
-        const stageWhere = between('occurredAt', r);
         const stageRows = await this.prisma.stageEvent.groupBy({
             by: ['toStage'],
-            where: stageWhere,
+            where: between('occurredAt', r),
             _count: { _all: true },
         });
         for (const row of stageRows) {
@@ -130,19 +140,17 @@ let ProspectsService = class ProspectsService {
                 metrics[key] = row._count._all;
             }
         }
+        const rv0Canceled = stageRows.find(r => r.toStage === 'RV0_CANCELED')?._count._all ?? 0;
+        const rv1Canceled = stageRows.find(r => r.toStage === 'RV1_CANCELED')?._count._all ?? 0;
+        const rv2Canceled = stageRows.find(r => r.toStage === 'RV2_CANCELED')?._count._all ?? 0;
+        metrics.APPOINTMENT_CANCELED = rv0Canceled + rv1Canceled + rv2Canceled;
         return metrics;
     }
     async getOpsColumns(from, to) {
         let configs = await this.prisma.metricConfig.findMany({ orderBy: { order: 'asc' } });
         if (!configs.length) {
             await this.prisma.$transaction(DEFAULT_METRICS.map((m) => this.prisma.metricConfig.create({
-                data: {
-                    key: m.key,
-                    label: m.label,
-                    sourcePath: m.sourcePath,
-                    order: m.order,
-                    enabled: m.enabled,
-                },
+                data: { key: m.key, label: m.label, sourcePath: m.sourcePath, order: m.order, enabled: m.enabled },
             })));
             configs = await this.prisma.metricConfig.findMany({ orderBy: { order: 'asc' } });
         }
@@ -162,16 +170,14 @@ let ProspectsService = class ProspectsService {
             throw new common_1.BadRequestException('columnKey requis');
         const [lead, column] = await Promise.all([
             this.prisma.lead.findUnique({ where: { id: leadId } }),
-            this.prisma.prospectsColumnConfig
-                .findUnique({ where: { id: columnKey } })
-                .catch(() => null),
+            this.prisma.prospectsColumnConfig.findUnique({ where: { id: columnKey } }).catch(() => null),
         ]);
         if (!lead)
             throw new common_1.NotFoundException('Lead introuvable');
-        const prev = lead.boardColumnKey ?? null;
+        const prevBoardKey = lead.boardColumnKey ?? null;
         try {
             await this.prisma.leadBoardEvent?.create?.({
-                data: { leadId, columnKey, previousKey: prev, movedAt: new Date() },
+                data: { leadId, columnKey, previousKey: prevBoardKey, movedAt: new Date() },
             });
         }
         catch { }
@@ -183,26 +189,29 @@ let ProspectsService = class ProspectsService {
         }
         catch { }
         if (column?.stage) {
-            const stage = column.stage;
-            const type = STAGE_TO_EVENT[stage];
+            const toStage = column.stage;
             try {
                 await this.prisma.leadEvent?.create?.({
                     data: {
                         leadId,
-                        type,
-                        meta: { source: 'board-drop', columnKey, stage },
+                        type: STAGE_TO_EVENT[toStage],
+                        meta: { source: 'board-drop', columnKey, stage: toStage },
                         occurredAt: new Date(),
                     },
                 });
             }
             catch { }
-            try {
-                await this.prisma.lead.update({
-                    where: { id: leadId },
-                    data: { stage, stageUpdatedAt: new Date() },
-                });
-            }
-            catch { }
+            const updated = await this.prisma.lead.update({
+                where: { id: leadId },
+                data: { stage: toStage, stageUpdatedAt: new Date() },
+            });
+            await this.stageEvents.recordStageEntry({
+                leadId,
+                fromStage: lead.stage ?? null,
+                toStage,
+                source: 'board-drop',
+                occurredAt: updated.stageUpdatedAt,
+            });
         }
         return { ok: true };
     }
@@ -220,6 +229,9 @@ let ProspectsService = class ProspectsService {
         { label: 'RV1 honorés', stage: 'RV1_HONORED', order: 21, enabled: true },
         { label: 'RV1 no-show', stage: 'RV1_NO_SHOW', order: 22, enabled: false },
         { label: 'RV1 reportés', stage: 'RV1_POSTPONED', order: 23, enabled: false },
+        { label: 'RV0 annulés', stage: 'RV0_CANCELED', order: 12.5, enabled: false },
+        { label: 'RV1 annulés', stage: 'RV1_CANCELED', order: 23.5, enabled: true },
+        { label: 'RV2 annulés', stage: 'RV2_CANCELED', order: 32.5, enabled: false },
         { label: 'RV2 planifiés', stage: 'RV2_PLANNED', order: 30, enabled: false },
         { label: 'RV2 honorés', stage: 'RV2_HONORED', order: 31, enabled: false },
         { label: 'RV2 reportés', stage: 'RV2_POSTPONED', order: 32, enabled: false },
@@ -240,31 +252,44 @@ let ProspectsService = class ProspectsService {
     async putColumnsConfig(payload) {
         if (!Array.isArray(payload))
             throw new common_1.BadRequestException('Payload invalide');
-        const normalized = payload.map((c, idx) => ({
-            id: c.id,
-            label: c.label,
-            order: typeof c.order === 'number' ? c.order : idx,
-            enabled: typeof c.enabled === 'boolean' ? c.enabled : true,
-            stage: c.stage ?? null,
-        }));
-        await this.prisma.$transaction(normalized.map((c) => c.id
-            ? this.prisma.prospectsColumnConfig.update({
-                where: { id: c.id },
-                data: {
-                    label: c.label ?? undefined,
-                    order: c.order,
-                    enabled: c.enabled,
-                    stage: c.stage,
-                },
-            })
-            : this.prisma.prospectsColumnConfig.create({
+        const normalized = payload.map((c, idx) => {
+            const safeId = typeof c.id === 'string' && c.id.trim().length > 0 ? c.id.trim() : undefined;
+            return {
+                id: safeId,
+                label: c.label,
+                order: typeof c.order === 'number' ? c.order : idx,
+                enabled: typeof c.enabled === 'boolean' ? c.enabled : true,
+                stage: c.stage ?? null,
+            };
+        });
+        await this.prisma.$transaction(normalized.map((c) => {
+            if (c.id) {
+                return this.prisma.prospectsColumnConfig.upsert({
+                    where: { id: c.id },
+                    update: {
+                        label: c.label ?? undefined,
+                        order: c.order,
+                        enabled: c.enabled,
+                        stage: c.stage,
+                    },
+                    create: {
+                        id: c.id,
+                        label: c.label || 'Sans nom',
+                        order: c.order,
+                        enabled: c.enabled,
+                        stage: c.stage,
+                    },
+                });
+            }
+            return this.prisma.prospectsColumnConfig.create({
                 data: {
                     label: c.label || 'Sans nom',
                     order: c.order,
                     enabled: c.enabled,
                     stage: c.stage,
                 },
-            })));
+            });
+        }));
         const rows = await this.prisma.prospectsColumnConfig.findMany({ orderBy: { order: 'asc' } });
         return { ok: true, columns: rows };
     }
@@ -306,13 +331,16 @@ let ProspectsService = class ProspectsService {
             'RV0_PLANNED',
             'RV0_HONORED',
             'RV0_NO_SHOW',
+            'RV0_CANCELED',
             'RV1_PLANNED',
             'RV1_HONORED',
             'RV1_NO_SHOW',
+            'RV1_CANCELED',
             'RV1_POSTPONED',
             'RV2_PLANNED',
             'RV2_HONORED',
             'RV2_POSTPONED',
+            'RV2_CANCELED',
             'NOT_QUALIFIED',
             'LOST',
             'WON',
@@ -321,6 +349,9 @@ let ProspectsService = class ProspectsService {
         for (const s of allStages)
             columns[s] = emptyCol();
         for (const l of leads) {
+            const hasFreeColumn = l.boardColumnKey != null;
+            if (hasFreeColumn)
+                continue;
             const col = columns[l.stage] ?? columns['LEADS_RECEIVED'];
             if (col.items.length < limit)
                 col.items.push(l);
@@ -328,7 +359,17 @@ let ProspectsService = class ProspectsService {
             col.sumOpportunity += l.opportunityValue ?? 0;
             col.sumSales += l.saleValue ?? 0;
         }
-        return { columns };
+        const extraByColumnKey = {};
+        for (const l of leads) {
+            const key = l.boardColumnKey;
+            if (!key)
+                continue;
+            if (!extraByColumnKey[key])
+                extraByColumnKey[key] = [];
+            if (extraByColumnKey[key].length < limit)
+                extraByColumnKey[key].push(l);
+        }
+        return { columns, extraByColumnKey };
     }
     ensureNonNegative(label, v) {
         if (v == null)
@@ -342,6 +383,7 @@ let ProspectsService = class ProspectsService {
         const lead = await this.prisma.lead.findUnique({ where: { id } });
         if (!lead)
             throw new common_1.BadRequestException('Lead introuvable');
+        const prev = lead.stage;
         if (target === 'WON') {
             let saleValueToSet = null;
             if (typeof body.saleValue === 'number') {
@@ -372,15 +414,17 @@ let ProspectsService = class ProspectsService {
             });
             try {
                 await this.prisma.leadEvent?.create?.({
-                    data: {
-                        leadId: id,
-                        type: 'WON',
-                        occurredAt: new Date(),
-                        meta: { source: 'moveStage' },
-                    },
+                    data: { leadId: id, type: 'WON', occurredAt: new Date(), meta: { source: 'moveStage' } },
                 });
             }
             catch { }
+            await this.stageEvents.recordStageEntry({
+                leadId: id,
+                fromStage: prev,
+                toStage: 'WON',
+                source: 'moveStage',
+                occurredAt: updated.stageUpdatedAt,
+            });
             return { ok: true, lead: updated };
         }
         const updated = await this.prisma.lead.update({
@@ -391,15 +435,17 @@ let ProspectsService = class ProspectsService {
                 closer: { select: { id: true, firstName: true, email: true } },
             },
         });
+        await this.stageEvents.recordStageEntry({
+            leadId: id,
+            fromStage: prev,
+            toStage: target,
+            source: 'moveStage',
+            occurredAt: updated.stageUpdatedAt,
+        });
         if (EVENT_BASED_STAGES.includes(target)) {
             try {
                 await this.prisma.leadEvent?.create?.({
-                    data: {
-                        leadId: id,
-                        type: target,
-                        occurredAt: new Date(),
-                        meta: { source: 'moveStage' },
-                    },
+                    data: { leadId: id, type: target, occurredAt: new Date(), meta: { source: 'moveStage' } },
                 });
             }
             catch { }
@@ -497,6 +543,13 @@ let ProspectsService = class ProspectsService {
             });
         }
         catch { }
+        await this.stageEvents.recordStageEntry({
+            leadId: lead.id,
+            fromStage: null,
+            toStage: stage,
+            source: 'createLead',
+            occurredAt: lead.createdAt,
+        });
         return { ok: true, lead };
     }
     async listActors() {
@@ -620,6 +673,13 @@ let ProspectsService = class ProspectsService {
                                 stageUpdatedAt: new Date(),
                             },
                         });
+                        await this.stageEvents.recordStageEntry({
+                            leadId: existing.id,
+                            fromStage: existing.stage,
+                            toStage: stage,
+                            source: 'importCsv',
+                            occurredAt: new Date(),
+                        });
                         results.updated++;
                     }
                     else {
@@ -649,6 +709,13 @@ let ProspectsService = class ProspectsService {
                             });
                         }
                         catch { }
+                        await this.stageEvents.recordStageEntry({
+                            leadId: created.id,
+                            fromStage: null,
+                            toStage: stage,
+                            source: 'importCsv',
+                            occurredAt: created.createdAt,
+                        });
                         results.created++;
                     }
                 }
@@ -678,6 +745,13 @@ let ProspectsService = class ProspectsService {
                         });
                     }
                     catch { }
+                    await this.stageEvents.recordStageEntry({
+                        leadId: created.id,
+                        fromStage: null,
+                        toStage: stage,
+                        source: 'importCsv',
+                        occurredAt: created.createdAt,
+                    });
                     results.created++;
                 }
             }
@@ -743,6 +817,9 @@ let ProspectsService = class ProspectsService {
             'RV2_POSTPONED',
             'NOT_QUALIFIED',
             'LOST',
+            'RV0_CANCELED',
+            'RV1_CANCELED',
+            'RV2_CANCELED',
             'WON',
         ];
         const up = String(s).toUpperCase();
@@ -812,10 +889,9 @@ let ProspectsService = class ProspectsService {
         if (dto.type !== 'STAGE_ENTERED') {
             return { ok: true };
         }
-        const normalized = dto.stage ?? (0, create_prospect_event_dto_1.normalizeStage)(dto.status);
-        if (!normalized) {
+        const normalized = dto.stage ? (0, create_prospect_event_dto_1.normalizeStage)(dto.stage) : (0, create_prospect_event_dto_1.normalizeStage)(dto.status);
+        if (!normalized)
             throw new common_1.BadRequestException('Stage manquant ou invalide');
-        }
         const stageMap = {
             [create_prospect_event_dto_1.StageDto.LEAD_RECU]: 'LEADS_RECEIVED',
             [create_prospect_event_dto_1.StageDto.DEMANDE_APPEL]: 'CALL_REQUESTED',
@@ -830,42 +906,45 @@ let ProspectsService = class ProspectsService {
             [create_prospect_event_dto_1.StageDto.RV1_NO_SHOW]: 'RV1_NO_SHOW',
             [create_prospect_event_dto_1.StageDto.RV2_PLANIFIE]: 'RV2_PLANNED',
             [create_prospect_event_dto_1.StageDto.RV2_HONORE]: 'RV2_HONORED',
+            [create_prospect_event_dto_1.StageDto.RV0_ANNULE]: 'RV0_CANCELED',
+            [create_prospect_event_dto_1.StageDto.RV1_ANNULE]: 'RV1_CANCELED',
+            [create_prospect_event_dto_1.StageDto.RV2_ANNULE]: 'RV2_CANCELED',
             [create_prospect_event_dto_1.StageDto.WON]: 'WON',
             [create_prospect_event_dto_1.StageDto.LOST]: 'LOST',
             [create_prospect_event_dto_1.StageDto.NOT_QUALIFIED]: 'NOT_QUALIFIED',
         };
         const toStage = stageMap[normalized];
-        if (!toStage) {
+        if (!toStage)
             throw new common_1.BadRequestException('Stage inconnu');
-        }
         const occurredAt = dto.occurredAt ? new Date(dto.occurredAt) : new Date();
         try {
-            await this.prisma.stageEvent.create({
-                data: {
-                    leadId,
-                    fromStage: lead.stage,
-                    toStage,
-                    occurredAt,
-                    source: 'prospects-board',
-                    externalId: null,
-                },
+            await this.stageEvents.recordStageEntry({
+                leadId,
+                fromStage: lead.stage,
+                toStage,
+                source: 'prospects-board',
+                externalId: null,
+                occurredAt,
             });
         }
-        catch (e) {
-        }
+        catch { }
         await this.prisma.lead.update({
             where: { id: leadId },
-            data: {
-                stage: toStage,
-                stageUpdatedAt: occurredAt,
-            },
+            data: { stage: toStage, stageUpdatedAt: occurredAt },
         });
         return { ok: true };
+    }
+    async updateBoardColumn(id, columnKey) {
+        return this.prisma.lead.update({
+            where: { id },
+            data: { boardColumnKey: columnKey },
+        });
     }
 };
 exports.ProspectsService = ProspectsService;
 exports.ProspectsService = ProspectsService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [prisma_service_1.PrismaService])
+    __metadata("design:paramtypes", [prisma_service_1.PrismaService,
+        stage_events_service_1.StageEventsService])
 ], ProspectsService);
 //# sourceMappingURL=prospects.service.js.map

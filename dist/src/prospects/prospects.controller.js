@@ -65,6 +65,9 @@ let ProspectsController = class ProspectsController {
     moveStage(id, body) {
         return this.svc.moveStage(id, body);
     }
+    async setBoardColumn(id, body) {
+        return this.svc.moveToFreeColumn(id, body.columnKey ?? '');
+    }
     updateOne(id, body) {
         return this.svc.updateOne(id, body);
     }
@@ -130,6 +133,14 @@ __decorate([
     __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", void 0)
 ], ProspectsController.prototype, "moveStage", null);
+__decorate([
+    (0, common_1.Patch)(':id/board-column'),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", Promise)
+], ProspectsController.prototype, "setBoardColumn", null);
 __decorate([
     (0, common_1.Patch)(':id'),
     __param(0, (0, common_1.Param)('id')),
