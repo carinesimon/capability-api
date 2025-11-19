@@ -147,6 +147,7 @@ function mapAppointmentToStage(type?: string | null, status?: string | null): Le
   if (s === 'NO_SHOW' || s === 'NOSHOW') {
     if (t === 'RV1') return 'RV1_NO_SHOW';
     if (t === 'RV0') return 'RV0_NO_SHOW';
+    // si tu crées RV2_NO_SHOW plus tard, mape-le ici
   }
   // reporté
   if (s === 'RESCHEDULED' || s === 'POSTPONED') {
@@ -584,4 +585,3 @@ export class GhlService {
     }
   }
 }
-

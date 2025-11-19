@@ -12,5 +12,4 @@ import { LeadsModule } from '../../modules/leads/leads.module';
   controllers: [GhlController],
   providers: [GhlService, PrismaService],
 })
-    
 export class GhlModule {}

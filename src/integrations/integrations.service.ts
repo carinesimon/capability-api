@@ -216,7 +216,6 @@ export class IntegrationsService {
         payload: true,
       },
     });
-    
   }
 
   // ========= Replay d’un event =========
@@ -646,7 +645,7 @@ export class IntegrationsService {
   }
 
   private stageToEvent(stage: LeadStage): string {
-    const map: Record<LeadStage, string> = {
+    const map: Partial<Record<LeadStage, string>> = {
       LEADS_RECEIVED: 'LEAD_CREATED',
       CALL_REQUESTED: 'CALL_REQUESTED',
       CALL_ATTEMPT: 'CALL_ATTEMPT',
@@ -664,7 +663,7 @@ export class IntegrationsService {
       RV2_HONORED: 'APPOINTMENT_HONORED_RV2',
       RV2_POSTPONED: 'APPOINTMENT_POSTPONED_RV2',
       NOT_QUALIFIED: 'NOT_QUALIFIED',
-      LOST: 'LOST',
+      LOST: 'LOST', 
       WON: 'WON',
     };
     return map[stage] || stage;
@@ -739,4 +738,3 @@ export class IntegrationsService {
     return { mapped, stage, report };
   }
 }
-

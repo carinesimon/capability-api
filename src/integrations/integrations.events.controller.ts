@@ -25,5 +25,4 @@ export class IntegrationsEventsController {
     // `result` contient déjà { ok: true, ... } → on le renvoie tel quel
     return result;
   }
-  
 }

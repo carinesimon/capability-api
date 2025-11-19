@@ -69,5 +69,4 @@ async get(@Param('id') id: string) {
   async replay(@Param('eventId') eventId: string) {
     return this.svc.replayEvent(eventId);
   }
-  
 }
