@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "public"."LeadStage" ADD VALUE 'APPOINTMENT_CANCELED';

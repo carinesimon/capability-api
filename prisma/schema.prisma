@@ -93,7 +93,7 @@ model Lead {
   boardEvents  LeadBoardEvent[] @relation("LeadToLeadBoardEvent")
 
   // ✅ Comptage par “entrée de stage” (NOUVEAU)
-  stageEvents  StageEvent[]     @relation("LeadToStageEvent")
+  stageEvents StageEvent[] @relation("LeadToStageEvent")
 
   // Indexes existants/ajoutés
   @@index([stage, stageUpdatedAt])
@@ -347,15 +347,18 @@ enum LeadStage {
   RV0_PLANNED
   RV0_HONORED
   RV0_NO_SHOW
+  RV0_CANCELED
 
   RV1_PLANNED
   RV1_HONORED
   RV1_NO_SHOW
   RV1_POSTPONED
+  RV1_CANCELED
 
   RV2_PLANNED
   RV2_HONORED
   RV2_POSTPONED
+  RV2_CANCELED
 
   NOT_QUALIFIED
   LOST
@@ -395,7 +398,7 @@ model Automation {
   status      AutomationStatus @default(ON)
   mappingJson Json?
   rulesJson   Json?
-  metaJson    Json?            // <--- AJOUT : pour { rrIndex: { setter, closer } }
+  metaJson    Json? // <--- AJOUT : pour { rrIndex: { setter, closer } }
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
@@ -435,15 +438,18 @@ enum PipelineMetricKey {
   RV0_PLANNED
   RV0_HONORED
   RV0_NO_SHOW
+  RV0_CANCELED
 
   RV1_PLANNED
   RV1_HONORED
   RV1_NO_SHOW
   RV1_POSTPONED
+  RV1_CANCELED
 
   RV2_PLANNED
   RV2_HONORED
   RV2_POSTPONED
+  RV2_CANCELED
 
   WON
 }
@@ -514,16 +520,16 @@ model StageEvent {
   fromStage  LeadStage?
   toStage    LeadStage
   occurredAt DateTime   @default(now())
-  source     String?    // "ui", "webhook:ghl", "import", etc.
+  source     String? // "ui", "webhook:ghl", "import", etc.
   externalId String?    @unique // pour idempotence si fourni par un webhook
   dedupHash  String?    @unique // fallback idempotence (ex: leadId|toStage|minute)
 
   // 👇 relation nommée qui matche Lead.stageEvents
   lead Lead @relation(name: "LeadToStageEvent", fields: [leadId], references: [id], onDelete: Cascade)
 
+  @@unique([leadId, toStage]) // 1er passage seulement
   @@index([toStage, occurredAt])
   @@index([leadId, toStage, occurredAt])
-  @@unique([leadId, toStage]) // 1er passage seulement
 }
 
 // prisma/schema.prisma
@@ -531,11 +537,10 @@ model StageEvent {
 model LeadStageHistory {
   id         String   @id @default(cuid())
   leadId     String
-  stage      String   // ex: "LEAD_RECU", "DEMANDE_APPEL", ...
+  stage      String // ex: "LEAD_RECU", "DEMANDE_APPEL", ...
   occurredAt DateTime @default(now())
 
   // un même lead ne doit être compté qu’une seule fois par stage
   @@unique([leadId, stage], name: "lead_stage_unique")
   @@index([stage, occurredAt], name: "lead_stage_by_stage_date")
 }
-
