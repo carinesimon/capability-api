@@ -9,14 +9,13 @@ async function bootstrap() {
   // JSON pour tout (on ne valide PAS de signature HMAC ici)
   app.use(express.json({ limit: '2mb' }));
 
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-    }),
-  );
+  app.useGlobalPipes(new ValidationPipe({
+  whitelist: true,
+  forbidNonWhitelisted: true,
+  transform: true,
+  validationError: { target: false, value: false },
+}));
+
   await app.listen(3000);
 }
 bootstrap();
-
