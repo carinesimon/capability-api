@@ -1,99 +1,197 @@
 // backend/src/modules/reporting/reporting.controller.ts
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Query, Res } from '@nestjs/common';
 import { ReportingService } from './reporting.service';
 
-@Controller('reporting')
+@Controller()
 export class ReportingController {
   constructor(private readonly reporting: ReportingService) {}
 
-  /* --------- Résumé global --------- */
-  @Get('summary')
+  /* --------- Bloc /reporting --------- */
+  @Get('reporting/summary')
   async getSummary(
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('tz') _tz?: string,
   ) {
     return this.reporting.summary(from, to);
   }
 
-  /* --------- Leads reçus (créations) --------- */
-  @Get('leads-received')
+  @Get('reporting/leads-received')
   async getLeadsReceived(
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('tz') _tz?: string,
   ) {
     return this.reporting.leadsReceived(from, to);
   }
 
-  /* --------- CA / ventes par semaine (WON) --------- */
-  @Get('sales-weekly')
+  // ✅ corriger le chemin + utiliser this.reporting
+  @Get('reporting/spotlight-setters')
+  spotlightSetters(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('tz') _tz?: string,
+  ) {
+    return this.reporting.spotlightSetters(from, to);
+  }
+
+  // ✅ corriger le chemin + utiliser this.reporting
+  @Get('reporting/spotlight-closers')
+  spotlightClosers(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('tz') _tz?: string,
+  ) {
+    return this.reporting.spotlightClosers(from, to);
+  }
+
+  // ===== EXPORTS SPOTLIGHT =====
+@Get('reporting/export/spotlight-setters.csv')
+async exportSpotlightSettersCsv(
+  @Query('from') from?: string,
+  @Query('to') to?: string,
+  @Query('tz') _tz?: string,
+  @Res() res?: any,
+) {
+  const buf = await this.reporting.exportSpotlightSettersCSV({ from, to });
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="spotlight_setters_${from || 'from'}_${to || 'to'}.csv"`);
+  return res.send(buf);
+}
+
+@Get('reporting/export/spotlight-closers.csv')
+async exportSpotlightClosersCsv(
+  @Query('from') from?: string,
+  @Query('to') to?: string,
+  @Query('tz') _tz?: string,
+  @Res() res?: any,
+) {
+  const buf = await this.reporting.exportSpotlightClosersCSV({ from, to });
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="spotlight_closers_${from || 'from'}_${to || 'to'}.csv"`);
+  return res.send(buf);
+}
+
+@Get('reporting/export/spotlight-setters.pdf')
+async exportSpotlightSettersPdf(
+  @Query('from') from?: string,
+  @Query('to') to?: string,
+  @Query('tz') _tz?: string,
+  @Res() res?: any,
+) {
+  const buf = await this.reporting.exportSpotlightSettersPDF({ from, to });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="spotlight_setters_${from || 'from'}_${to || 'to'}.pdf"`);
+  return res.send(buf);
+}
+
+@Get('reporting/export/spotlight-closers.pdf')
+async exportSpotlightClosersPdf(
+  @Query('from') from?: string,
+  @Query('to') to?: string,
+  @Query('tz') _tz?: string,
+  @Res() res?: any,
+) {
+  const buf = await this.reporting.exportSpotlightClosersPDF({ from, to });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="spotlight_closers_${from || 'from'}_${to || 'to'}.pdf"`);
+  return res.send(buf);
+}
+
+  @Get('reporting/sales-weekly')
   async getSalesWeekly(
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('tz') _tz?: string,
   ) {
     return this.reporting.salesWeekly(from, to);
   }
 
-  /* --------- Classement setters --------- */
-  @Get('setters')
+  @Get('reporting/setters')
   async getSetters(
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('tz') _tz?: string,
   ) {
     return this.reporting.settersReport(from, to);
   }
 
-  /* --------- Classement closers --------- */
-  @Get('closers')
+  @Get('reporting/closers')
   async getClosers(
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('tz') _tz?: string,
   ) {
     return this.reporting.closersReport(from, to);
   }
 
-  /* --------- Équipe de choc (duos setter × closer) --------- */
-  @Get('duos')
+  @Get('reporting/duos')
   async getDuos(
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('tz') _tz?: string,
   ) {
     return this.reporting.duosReport(from, to);
   }
 
-  /* --------- Weekly ops (RV0 / RV1 / RV2 / LOST / NOT_QUALIFIED) --------- */
-  @Get('weekly-ops')
+  @Get('reporting/weekly-ops')
   async getWeeklyOps(
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('tz') _tz?: string,
   ) {
     const rows = await this.reporting.weeklySeries(from, to);
     return { ok: true as const, rows };
   }
 
-  /* --------- Drill: leads reçus --------- */
-  @Get('drill/leads-received')
+  @Get('reporting/funnel')
+  async getFunnel(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('tz') _tz?: string,
+  ) {
+    return this.reporting.funnel(from, to);
+  }
+
+  @Get('reporting/pipeline-metrics')
+  async getPipelineMetrics(
+    @Query('keys') keys?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('mode') mode?: 'entered' | 'current',
+    @Query('tz') _tz?: string,
+  ) {
+    const list = (keys || '')
+      .split(',')
+      .map((k) => k.trim())
+      .filter(Boolean);
+    return this.reporting.pipelineMetrics({ keys: list, from, to, mode });
+  }
+
+  /* --------- DRILLS --------- */
+  @Get('reporting/drill/leads-received')
   async drillLeads(
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('limit') limitStr?: string,
+    @Query('tz') _tz?: string,
   ) {
     const limit = Number(limitStr ?? 2000);
     return this.reporting.drillLeadsReceived({ from, to, limit });
   }
 
-  /* --------- Drill: ventes (WON) --------- */
-  @Get('drill/won')
+  @Get('reporting/drill/won')
   async drillWon(
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('limit') limitStr?: string,
+    @Query('tz') _tz?: string,
   ) {
     const limit = Number(limitStr ?? 2000);
     return this.reporting.drillWon({ from, to, limit });
   }
 
-  /* --------- Drill: appointments (RV0 / RV1 / RV2) --------- */
-  @Get('drill/appointments')
+  @Get('reporting/drill/appointments')
   async drillAppointments(
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -101,42 +199,65 @@ export class ReportingController {
     @Query('status') status?: 'HONORED' | 'POSTPONED' | 'CANCELED' | 'NO_SHOW' | 'NOT_QUALIFIED',
     @Query('userId') userId?: string,
     @Query('limit') limitStr?: string,
+    @Query('tz') _tz?: string,
   ) {
     const limit = Number(limitStr ?? 2000);
     return this.reporting.drillAppointments({ from, to, type, status, userId, limit });
   }
 
-  /* --------- Drill: demandes d’appel --------- */
-  @Get('drill/call-requests')
+  @Get('reporting/drill/call-requests')
   async drillCallRequests(
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('limit') limitStr?: string,
+    @Query('tz') _tz?: string,
   ) {
     const limit = Number(limitStr ?? 2000);
     return this.reporting.drillCallRequests({ from, to, limit });
   }
 
-  /* --------- Drill: appels (passés / répondus / no-show setter) --------- */
-  @Get('drill/calls')
+  @Get('reporting/drill/calls')
   async drillCalls(
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('answered') answeredStr?: string,
     @Query('setterNoShow') setterNoShowStr?: string,
     @Query('limit') limitStr?: string,
+    @Query('tz') _tz?: string,
   ) {
     const answered = answeredStr === '1' || answeredStr === 'true';
     const setterNoShow = setterNoShowStr === '1' || setterNoShowStr === 'true';
     const limit = Number(limitStr ?? 2000);
+    return this.reporting.drillCalls({ from, to, answered, setterNoShow, limit });
+  }
 
-    return this.reporting.drillCalls({
-      from,
-      to,
-      answered,
-      setterNoShow,
-      limit,
-    });
-    
+  /* --------- Bloc /metrics --------- */
+  @Get('metrics/stage-series')
+  async metricStageSeries(
+    @Query('stage') stage?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('tz') _tz?: string,
+  ) {
+    if (!stage) return { total: 0, byDay: [] };
+    return this.reporting.stageSeries(stage, from, to);
+  }
+
+  @Get('metrics/leads-by-day')
+  async leadsByDay(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('tz') _tz?: string,
+  ) {
+    return this.reporting.leadsReceived(from, to);
+  }
+
+  @Get('reporting/metrics/canceled-daily')
+  async canceledDaily(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('tz') _tz?: string,
+  ) {
+    return this.reporting.canceledDaily(from, to);
   }
 }

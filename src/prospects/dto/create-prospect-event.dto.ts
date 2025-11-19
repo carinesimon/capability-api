@@ -14,6 +14,10 @@ export enum StageDto {
   RV1_NO_SHOW = "RV1_NO_SHOW",
   RV2_PLANIFIE = "RV2_PLANIFIE",
   RV2_HONORE = "RV2_HONORE",
+  RV0_ANNULE = "RV0_CANCELED",
+  RV1_ANNULE = "RV1_CANCELED",
+  RV2_ANNULE = "RV2_CANCELED",
+
   WON = "WON",
   LOST = "LOST",
   NOT_QUALIFIED = "NOT_QUALIFIED",
@@ -26,8 +30,8 @@ export class CreateProspectEventDto {
 
   /** Stage cible (pour STAGE_ENTERED/STAGE_LEFT) */
   @IsOptional()
-  @IsEnum(StageDto)
-  stage?: StageDto;
+  @IsString()
+  stage?: string;
 
   /** Statut optionnel (HONORED | NO_SHOW | POSTPONED …) */
   @IsOptional()
@@ -61,7 +65,15 @@ export function normalizeStage(input?: string): StageDto | undefined {
     RV2_PLANIFIE: StageDto.RV2_PLANIFIE, RDV2_PLANIFIE: StageDto.RV2_PLANIFIE,
     RV2_HONORE: StageDto.RV2_HONORE, RV2_HONORE_: StageDto.RV2_HONORE, RDV2_HONORE: StageDto.RV2_HONORE,
     WON: StageDto.WON, LOST: StageDto.LOST, NOT_QUALIFIED: StageDto.NOT_QUALIFIED,
+
+    RV0_ANNULE: StageDto.RV0_ANNULE,
+    RV1_ANNULE: StageDto.RV1_ANNULE,
+    RV2_ANNULE: StageDto.RV2_ANNULE,
+
+    // ✅ accepte aussi l'écriture EN
+    RV0_CANCELED: StageDto.RV0_ANNULE,
+    RV1_CANCELED: StageDto.RV1_ANNULE,
+    RV2_CANCELED: StageDto.RV2_ANNULE,
   };
   return map[k];
-  
 }

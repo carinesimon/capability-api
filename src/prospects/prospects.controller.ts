@@ -120,6 +120,16 @@ export class ProspectsController {
     return this.svc.moveStage(id, body as any);
   }
 
+    // 🔹 Déplacement dans une colonne libre (ex: "RDV annulés")
+  @Patch(':id/board-column')
+  async setBoardColumn(
+    @Param('id') id: string,
+    @Body() body: { columnKey?: string | null },
+  ) {
+    // si tu veux le comportement “intelligent” qui logge un StageEvent SI la colonne est mappée :
+    return this.svc.moveToFreeColumn(id, body.columnKey ?? '');
+  }
+
   @Patch(':id')
   updateOne(
     @Param('id') id: string,
@@ -145,5 +155,5 @@ export class ProspectsController {
   getOne(@Param('id') id: string) {
     return this.svc.getOne(id);
   }
-  
+
 }
