@@ -1,5 +1,4 @@
 export function mapGhlStageToLeadStage(ghlStageName?: string): "UNASSIGNED"|"RV0"|"RV1"|"RV2"|"WON"|"LOST"|"NOT_QUALIFIED"|null {
-  
   if (!ghlStageName) return null;
   const name = ghlStageName.trim().toLowerCase();
   if (["prospect","nouveau","new"].includes(name)) return "UNASSIGNED";
@@ -11,4 +10,3 @@ export function mapGhlStageToLeadStage(ghlStageName?: string): "UNASSIGNED"|"RV0
   if (["not qualified","not_qualified","nq"].includes(name)) return "NOT_QUALIFIED";
   return null;
 }
-

@@ -35,6 +35,7 @@ export type PipelineMetricKey =
   | 'RV1_CANCELED'
   | 'RV2_PLANNED'
   | 'RV2_HONORED'
+  | 'RV2_NO_SHOW'
   | 'RV2_POSTPONED'
   | 'RV2_CANCELED'
   | 'NOT_QUALIFIED'
@@ -67,6 +68,8 @@ const DEFAULT_METRICS: Array<{
 
   { key: 'RV2_PLANNED',          label: 'RV2 planifiés',           sourcePath: 'funnel.totals.rv2Planned',          order: 13,  enabled: true },
   { key: 'RV2_HONORED',          label: 'RV2 honorés',             sourcePath: 'funnel.totals.rv2Honored',          order: 14,  enabled: true },
+  { key: 'RV2_NO_SHOW',          label: 'RV2 no-show',             sourcePath: 'funnel.totals.rv2NoShow',           order: 20,  enabled: true },
+
   { key: 'RV2_POSTPONED',        label: 'RV2 reportés',            sourcePath: 'funnel.totals.rv2Postponed',        order: 15,  enabled: true },
 
   { key: 'APPOINTMENT_CANCELED', label: 'RDV annulés',             sourcePath: 'funnel.totals.appointmentCanceled', order: 16,  enabled: true },
@@ -103,6 +106,7 @@ const STAGE_TO_EVENT: Partial<Record<LeadStage, string>> = {
 
   RV2_PLANNED:     'APPOINTMENT_PLANNED_RV2',
   RV2_HONORED:     'APPOINTMENT_HONORED_RV2',
+  RV2_NO_SHOW:     'APPOINTMENT_NOSHOW_RV2',
   RV2_POSTPONED:   'APPOINTMENT_POSTPONED_RV2',
   RV2_CANCELED:    'APPOINTMENT_CANCELED_RV2',
 
@@ -394,6 +398,8 @@ export class ProspectsService {
 
     { label: 'RV2 planifiés',    stage: 'RV2_PLANNED',     order: 30,  enabled: false },
     { label: 'RV2 honorés',      stage: 'RV2_HONORED',     order: 31,  enabled: false },
+    { label: 'RV2 no-show',      stage: 'RV2_NO_SHOW',     order: 29,  enabled: false },
+
     { label: 'RV2 reportés',     stage: 'RV2_POSTPONED',   order: 32,  enabled: false },
 
     { label: 'Non qualifiés',    stage: 'NOT_QUALIFIED',   order: 90,  enabled: true },
@@ -533,6 +539,7 @@ async putColumnsConfig(payload: Array<{
       'RV1_POSTPONED',
       'RV2_PLANNED',
       'RV2_HONORED',
+      'RV2_NO_SHOW',
       'RV2_POSTPONED',
       'RV2_CANCELED',
       'NOT_QUALIFIED',
@@ -1065,6 +1072,7 @@ async putColumnsConfig(payload: Array<{
       'RV1_POSTPONED',
       'RV2_PLANNED',
       'RV2_HONORED',
+      'RV2_NO_SHOW',
       'RV2_POSTPONED',
       'NOT_QUALIFIED',
       'LOST',
@@ -1198,6 +1206,7 @@ async putColumnsConfig(payload: Array<{
 
       [StageDto.RV2_PLANIFIE]:  'RV2_PLANNED',
       [StageDto.RV2_HONORE]:    'RV2_HONORED',
+      [StageDto.RV2_NO_SHOW]:   'RV2_NO_SHOW',
 
       [StageDto.RV0_ANNULE]:    'RV0_CANCELED',
       [StageDto.RV1_ANNULE]:    'RV1_CANCELED',

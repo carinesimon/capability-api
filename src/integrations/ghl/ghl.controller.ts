@@ -100,6 +100,4 @@ export class GhlController {
     // 7) Rien de pertinent
     return { ok: true, handled: 'ignored' };
   }
-  
 }
-
