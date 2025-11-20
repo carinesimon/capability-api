@@ -30,6 +30,7 @@ function toUTCDateOnly(s?: string) {
 }
 
 // --------- Moteur PDF avancé (header, sections, table, footer) ---------
+// --------- Moteur PDF avancé (header, sections, table, footer) ---------
 async function buildAdvancedPDF(params: {
   title: string;
   period: string;
@@ -41,6 +42,8 @@ async function buildAdvancedPDF(params: {
   return await new Promise<Buffer>((resolve) => {
     const doc = new PDFKit({ size: 'A4', margin: 24 }); // marges réduites pour densité
     const chunks: any[] = [];
+    let pageIndex = 1; // 👈 compteur manuel de pages
+
     doc.on('data', (c)=> chunks.push(c));
     doc.on('end', ()=> resolve(Buffer.concat(chunks)));
 
@@ -123,8 +126,10 @@ async function buildAdvancedPDF(params: {
       // Page break (keep header sticky)
       if (y + rowHeight + 32 > doc.page.height) {
         // footer current page
-        renderFooter(doc, params);
+        renderFooter(doc, params, pageIndex);
         doc.addPage();
+        pageIndex += 1; // 👈 incrémente le numéro de page
+
         // repaint background
         doc.rect(0,0,doc.page.width, doc.page.height).fill(PALETTE.bg);
         y = 24;
@@ -154,15 +159,15 @@ async function buildAdvancedPDF(params: {
     });
 
     // Footer last page
-    renderFooter(doc, params);
+    renderFooter(doc, params, pageIndex);
 
     // end
     doc.end();
 
     // Footer renderer
-    function renderFooter(d: PDFKit.PDFDocument, p: typeof params) {
+    function renderFooter(d: PDFKit.PDFDocument, p: typeof params, page: number) {
       const txt = `${p.title} — ${p.period}`;
-      const pageStr = `Page ${d.page.number}`;
+      const pageStr = `Page ${page}`;
       const yy = d.page.height - 20;
 
       d.save();
@@ -173,6 +178,7 @@ async function buildAdvancedPDF(params: {
     }
   });
 }
+
 
 // --------- Notes / commentaires par personne ---------
 function setterRowNote(r: any) {
@@ -665,7 +671,14 @@ async exportSpotlightClosersCSV({ from, to }: RangeArgs): Promise<Buffer> {
 
 
 // ---- PDF (PDFKit) ----
-private async buildSpotlightPDF(title: string, period: string, rows: any[], columns: { key: string; header: string; width?: number; format?:(v:any)=>string }[], analysis: string): Promise<Buffer> {
+// ---- PDF (PDFKit) ----
+private async buildSpotlightPDF(
+  title: string,
+  period: string,
+  rows: any[],
+  columns: { key: string; header: string; width?: number; format?:(v:any)=>string }[],
+  analysis: string,
+): Promise<Buffer> {
   return await new Promise<Buffer>((resolve) => {
     const doc = new PDFKit({ size: 'A4', margin: 36 });
     const chunks: any[] = [];
@@ -679,24 +692,27 @@ private async buildSpotlightPDF(title: string, period: string, rows: any[], colu
     doc.moveDown(0.6);
 
     // analysis
-    doc.fontSize(11).fillColor('#111').text('Analyse & recommandations', { bold: true });
+    doc.fontSize(11).font('Helvetica-Bold').fillColor('#111').text('Analyse & recommandations');
     doc.moveDown(0.2);
-    doc.fontSize(10).fillColor('#222').text(analysis, { align: 'left' });
+    doc.fontSize(10).font('Helvetica').fillColor('#222').text(analysis, { align: 'left' });
     doc.moveDown(0.8);
 
     // table header
-    doc.fontSize(11).fillColor('#111').text('Tableau de performances');
+    doc.fontSize(11).font('Helvetica-Bold').fillColor('#111').text('Tableau de performances');
     doc.moveDown(0.3);
 
-    const startX = doc.x, startY = doc.y;
+    const startX = doc.x;
+    const startY = doc.y;
     const colX: number[] = [];
     let x = startX;
-    columns.forEach((c, i) => {
+
+    columns.forEach((c) => {
       const w = c.width ?? 120;
       colX.push(x);
-      doc.fontSize(9).fillColor('#333').text(c.header, x, startY, { width: w });
+      doc.fontSize(9).font('Helvetica-Bold').fillColor('#333').text(c.header, x, startY, { width: w });
       x += w + 8;
     });
+
     doc.moveTo(startX, startY + 14).lineTo(x-8, startY + 14).strokeColor('#ddd').stroke();
     doc.moveDown(0.2);
 
@@ -708,16 +724,20 @@ private async buildSpotlightPDF(title: string, period: string, rows: any[], colu
         const w = c.width ?? 120;
         const raw = r[c.key];
         const val = c.format ? c.format(raw) : (raw ?? '');
-        doc.fontSize(9).fillColor('#000').text(String(val), x, y, { width: w });
+        doc.fontSize(9).font('Helvetica').fillColor('#000').text(String(val), x, y, { width: w });
         x += w + 8;
       });
       y += 14;
-      if (y > 780) { doc.addPage(); y = 48; }
+      if (y > 780) {
+        doc.addPage();
+        y = 48;
+      }
     });
 
     doc.end();
   });
 }
+
 
 private buildSetterAnalysis(rows: any[]) {
   if (!rows?.length) return "Aucune donnée disponible sur la période.";
@@ -1943,54 +1963,167 @@ async spotlightSetters(from?: string, to?: string): Promise<SpotlightSetterRow[]
   }
 
 
-  async drillAppointments(args: {
+    async drillAppointments(args: {
     from?: string;
     to?: string;
     type?: 'RV0' | 'RV1' | 'RV2';
-    status?: 'HONORED' | 'POSTPONED' | 'CANCELED' | 'NO_SHOW' | 'NOT_QUALIFIED';
+    status?: 'PLANNED' | 'HONORED' | 'POSTPONED' | 'CANCELED' | 'NO_SHOW' | 'NOT_QUALIFIED';
     userId?: string;
     limit: number;
   }) {
-    const r = toRange(args.from, args.to);
-    const where: any = {
-      ...between('scheduledAt', r),
-      ...(args.type ? { type: args.type } : {}),
-      ...(args.status ? { status: args.status } : {}),
-      ...(args.userId ? { userId: args.userId } : {}),
+    const { from, to, type, status, userId } = args;
+    const limit = args.limit ?? 2000;
+    const r = toRange(from, to);
+
+    // 1) On mappe (type,status) -> liste de LeadStage, alignée sur funnelFromStages
+    const stages: LeadStage[] = [];
+    const push = (s: LeadStage) => {
+      if (!stages.includes(s)) stages.push(s);
     };
-    const rows = await this.prisma.appointment.findMany({
+
+    if (type === 'RV0') {
+      if (!status || status === 'PLANNED')  push(LeadStage.RV0_PLANNED);
+      if (!status || status === 'HONORED')  push(LeadStage.RV0_HONORED);
+      if (!status || status === 'NO_SHOW')  push(LeadStage.RV0_NO_SHOW);
+      if (!status || status === 'CANCELED') push(LeadStage.RV0_CANCELED);
+    } else if (type === 'RV1') {
+      if (!status || status === 'PLANNED')  push(LeadStage.RV1_PLANNED);
+      if (!status || status === 'HONORED')  push(LeadStage.RV1_HONORED);
+      if (!status || status === 'NO_SHOW')  push(LeadStage.RV1_NO_SHOW);
+      if (!status || status === 'CANCELED') push(LeadStage.RV1_CANCELED);
+    } else if (type === 'RV2') {
+      if (!status || status === 'PLANNED')  push(LeadStage.RV2_PLANNED);
+      if (!status || status === 'HONORED')  push(LeadStage.RV2_HONORED);
+      if (!status || status === 'CANCELED') push(LeadStage.RV2_CANCELED);
+      if (status === 'POSTPONED')          push(LeadStage.RV2_POSTPONED as any);
+    }
+
+    // Cas particulier : tuile "NOT_QUALIFIED" sans type RVx
+    if (!type && status === 'NOT_QUALIFIED') {
+      push(LeadStage.NOT_QUALIFIED);
+    }
+
+    if (!stages.length) {
+      return { ok: true as const, count: 0, items: [] as any[] };
+    }
+
+    // 2) WHERE sur StageEvent, aligné avec funnelFromStages
+    const where: Prisma.StageEventWhereInput = {
+      toStage: { in: stages },
+      ...between('occurredAt', r),
+    };
+
+    // Gestion de userId : on colle à la logique setters/closers
+    if (userId) {
+      const leadFilter: any = {};
+      if (type === 'RV0') {
+        // RV0 = côté SETTER
+        leadFilter.setterId = userId;
+      } else if (type === 'RV1' || type === 'RV2') {
+        // RV1/RV2 = côté CLOSER
+        leadFilter.closerId = userId;
+      }
+
+      if (Object.keys(leadFilter).length) {
+        (where as any).lead = { ...(where as any).lead, ...leadFilter };
+      } else {
+        // fallback sécurité si un jour tu appelles avec un type différent
+        (where as any).userId = userId;
+      }
+    }
+
+    const rows = await this.prisma.stageEvent.findMany({
       where,
-      orderBy: { scheduledAt: 'desc' },
-      take: args.limit,
+      orderBy: { occurredAt: 'desc' },
+      take: limit,
       select: {
-        type: true, status: true, scheduledAt: true, userId: true,
+        occurredAt: true,
+        toStage: true,
         lead: {
           select: {
-            id: true, firstName: true, lastName: true, email: true, phone: true,
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            phone: true,
             setter: { select: { id: true, firstName: true, email: true } },
             closer: { select: { id: true, firstName: true, email: true } },
-            saleValue: true, createdAt: true, stageUpdatedAt: true,
+            saleValue: true,
+            createdAt: true,
+            stageUpdatedAt: true,
           },
         },
       },
     });
+
+    // Helpers pour reconstruire type + status côté front
+    const statusFromStage = (s: LeadStage): string => {
+      switch (s) {
+        case LeadStage.RV0_PLANNED:
+        case LeadStage.RV1_PLANNED:
+        case LeadStage.RV2_PLANNED:
+          return 'PLANNED';
+        case LeadStage.RV0_HONORED:
+        case LeadStage.RV1_HONORED:
+        case LeadStage.RV2_HONORED:
+          return 'HONORED';
+        case LeadStage.RV0_NO_SHOW:
+        case LeadStage.RV1_NO_SHOW:
+          return 'NO_SHOW';
+        case LeadStage.RV0_CANCELED:
+        case LeadStage.RV1_CANCELED:
+        case LeadStage.RV2_CANCELED:
+          return 'CANCELED';
+        case LeadStage.NOT_QUALIFIED:
+          return 'NOT_QUALIFIED';
+        default:
+          return 'UNKNOWN';
+      }
+    };
+
+    const typeFromStage = (s: LeadStage): string => {
+      const v = String(s);
+      if (v.startsWith('RV0_')) return 'RV0';
+      if (v.startsWith('RV1_')) return 'RV1';
+      if (v.startsWith('RV2_')) return 'RV2';
+      return 'PIPELINE';
+    };
+
     const items = rows
       .filter((r0) => !!r0.lead)
       .map((r0) => {
         const L = r0.lead!;
+        const inferredStatus = statusFromStage(r0.toStage);
+        const inferredType = typeFromStage(r0.toStage);
+
+        // Si le front a envoyé un status/type précis, on le garde ; sinon on prend celui du stage
+        const appStatus = status ?? inferredStatus;
+        const appType = type ?? inferredType;
+
         return {
           leadId: L.id,
           leadName: [L.firstName, L.lastName].filter(Boolean).join(' ') || '—',
-          email: L.email, phone: L.phone,
-          setter: L.setter ? { id: L.setter.id, name: L.setter.firstName, email: L.setter.email } : null,
-          closer: L.closer ? { id: L.closer.id, name: L.closer.firstName, email: L.closer.email } : null,
-          appointment: { type: r0.type, status: r0.status, scheduledAt: r0.scheduledAt.toISOString() },
+          email: L.email,
+          phone: L.phone,
+          setter: L.setter
+            ? { id: L.setter.id, name: L.setter.firstName, email: L.setter.email }
+            : null,
+          closer: L.closer
+            ? { id: L.closer.id, name: L.closer.firstName, email: L.closer.email }
+            : null,
+          appointment: {
+            type: appType,
+            status: appStatus as any,
+            // on utilise occurredAt comme date de l’événement
+            scheduledAt: r0.occurredAt.toISOString(),
+          },
           saleValue: L.saleValue ?? null,
           createdAt: L.createdAt.toISOString(),
           stageUpdatedAt: L.stageUpdatedAt.toISOString(),
         };
       });
-    return { ok: true, count: items.length, items };
+
+    return { ok: true as const, count: items.length, items };
   }
 
 
@@ -2141,6 +2274,4 @@ async spotlightSetters(from?: string, to?: string): Promise<SpotlightSetterRow[]
     return { ok: true, count: items.length, items };
   }
 }
-
-
 
