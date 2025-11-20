@@ -34,6 +34,7 @@ async function buildAdvancedPDF(params) {
     return await new Promise((resolve) => {
         const doc = new pdfkit_1.default({ size: 'A4', margin: 24 });
         const chunks = [];
+        let pageIndex = 1;
         doc.on('data', (c) => chunks.push(c));
         doc.on('end', () => resolve(Buffer.concat(chunks)));
         doc.rect(0, 0, doc.page.width, doc.page.height).fill(PALETTE.bg);
@@ -90,8 +91,9 @@ async function buildAdvancedPDF(params) {
             const extraNote = note ? Math.max(12, noteLines + 4) : 0;
             rowHeight += extraNote;
             if (y + rowHeight + 32 > doc.page.height) {
-                renderFooter(doc, params);
+                renderFooter(doc, params, pageIndex);
                 doc.addPage();
+                pageIndex += 1;
                 doc.rect(0, 0, doc.page.width, doc.page.height).fill(PALETTE.bg);
                 y = 24;
                 y = renderTableHeader(y);
@@ -113,11 +115,11 @@ async function buildAdvancedPDF(params) {
                 y += rowH + 4;
             }
         });
-        renderFooter(doc, params);
+        renderFooter(doc, params, pageIndex);
         doc.end();
-        function renderFooter(d, p) {
+        function renderFooter(d, p, page) {
             const txt = `${p.title} — ${p.period}`;
-            const pageStr = `Page ${d.page.number}`;
+            const pageStr = `Page ${page}`;
             const yy = d.page.height - 20;
             d.save();
             d.fontSize(8).font('Helvetica').fillColor(PALETTE.muted);
@@ -380,19 +382,20 @@ let ReportingService = class ReportingService {
             doc.moveDown(0.2);
             doc.fontSize(10).fillColor('#666').text(period);
             doc.moveDown(0.6);
-            doc.fontSize(11).fillColor('#111').text('Analyse & recommandations', { bold: true });
+            doc.fontSize(11).font('Helvetica-Bold').fillColor('#111').text('Analyse & recommandations');
             doc.moveDown(0.2);
-            doc.fontSize(10).fillColor('#222').text(analysis, { align: 'left' });
+            doc.fontSize(10).font('Helvetica').fillColor('#222').text(analysis, { align: 'left' });
             doc.moveDown(0.8);
-            doc.fontSize(11).fillColor('#111').text('Tableau de performances');
+            doc.fontSize(11).font('Helvetica-Bold').fillColor('#111').text('Tableau de performances');
             doc.moveDown(0.3);
-            const startX = doc.x, startY = doc.y;
+            const startX = doc.x;
+            const startY = doc.y;
             const colX = [];
             let x = startX;
-            columns.forEach((c, i) => {
+            columns.forEach((c) => {
                 const w = c.width ?? 120;
                 colX.push(x);
-                doc.fontSize(9).fillColor('#333').text(c.header, x, startY, { width: w });
+                doc.fontSize(9).font('Helvetica-Bold').fillColor('#333').text(c.header, x, startY, { width: w });
                 x += w + 8;
             });
             doc.moveTo(startX, startY + 14).lineTo(x - 8, startY + 14).strokeColor('#ddd').stroke();
@@ -404,7 +407,7 @@ let ReportingService = class ReportingService {
                     const w = c.width ?? 120;
                     const raw = r[c.key];
                     const val = c.format ? c.format(raw) : (raw ?? '');
-                    doc.fontSize(9).fillColor('#000').text(String(val), x, y, { width: w });
+                    doc.fontSize(9).font('Helvetica').fillColor('#000').text(String(val), x, y, { width: w });
                     x += w + 8;
                 });
                 y += 14;
@@ -838,6 +841,7 @@ let ReportingService = class ReportingService {
                 this.countSE({ stages: [client_2.LeadStage.RV1_CANCELED], r, by: { closerId: c.id } }),
                 this.countSE({ stages: [client_2.LeadStage.RV2_PLANNED], r, by: { closerId: c.id } }),
                 this.countSE({ stages: [client_2.LeadStage.RV2_HONORED], r, by: { closerId: c.id } }),
+                this.countSE({ stages: [client_2.LeadStage.RV2_NO_SHOW], r, by: { closerId: c.id } }),
                 this.countSE({ stages: [client_2.LeadStage.RV2_CANCELED], r, by: { closerId: c.id } }),
             ]);
             const wonWhere = await this.wonFilter(r);
@@ -1076,7 +1080,7 @@ let ReportingService = class ReportingService {
     }
     async funnelFromStages(r) {
         const get = (keys) => this.countEnteredInStages(keys, r);
-        const [leadsCreated, callReq, calls, answered, setterNoShow, rv0P, rv0H, rv0NS, rv0C, rv1P, rv1H, rv1NS, rv1C, rv2P, rv2H, rv2C, notQual, lost, wonCount, appointmentCanceled,] = await Promise.all([
+        const [leadsCreated, callReq, calls, answered, setterNoShow, rv0P, rv0H, rv0NS, rv0C, rv1P, rv1H, rv1NS, rv1C, rv2P, rv2H, rv2NS, rv2C, notQual, lost, wonCount, appointmentCanceled,] = await Promise.all([
             this.prisma.lead.count({ where: between('createdAt', r) }),
             get(['CALL_REQUESTED']),
             get(['CALL_ATTEMPT']),
@@ -1084,7 +1088,7 @@ let ReportingService = class ReportingService {
             get(['SETTER_NO_SHOW']),
             get(['RV0_PLANNED']), get(['RV0_HONORED']), get(['RV0_NO_SHOW']), get(['RV0_CANCELED']),
             get(['RV1_PLANNED']), get(['RV1_HONORED']), get(['RV1_NO_SHOW']), get(['RV1_CANCELED']),
-            get(['RV2_PLANNED']), get(['RV2_HONORED']), get(['RV2_CANCELED']),
+            get(['RV2_PLANNED']), get(['RV2_HONORED']), get(['RV2_NO_SHOW']), get(['RV2_CANCELED']),
             get(['NOT_QUALIFIED']), get(['LOST']),
             (async () => {
                 const where = await this.wonFilter(r);
@@ -1110,6 +1114,7 @@ let ReportingService = class ReportingService {
             rv1Canceled: num(rv1C),
             rv2Planned: num(rv2P),
             rv2Honored: num(rv2H),
+            rv2NoShow: num(rv2NS),
             rv2Canceled: num(rv2C),
             notQualified: num(notQual),
             lost: num(lost),
@@ -1154,6 +1159,7 @@ let ReportingService = class ReportingService {
                 rv1NoShow: await this.countEnteredInStages(['RV1_NO_SHOW'], wRange),
                 rv2Planned: await this.countEnteredInStages(['RV2_PLANNED'], wRange),
                 rv2Honored: await this.countEnteredInStages(['RV2_HONORED'], wRange),
+                rv2NoShow: await this.countEnteredInStages(['RV2_NO_SHOW'], wRange),
                 rv2Postponed: await this.countEnteredInStages(['RV2_POSTPONED'], wRange),
                 notQualified: await this.countEnteredInStages(['NOT_QUALIFIED'], wRange),
                 lost: await this.countEnteredInStages(['LOST'], wRange),
@@ -1258,40 +1264,152 @@ let ReportingService = class ReportingService {
         return { ok: true, count: items.length, items };
     }
     async drillAppointments(args) {
-        const r = toRange(args.from, args.to);
-        const where = {
-            ...between('scheduledAt', r),
-            ...(args.type ? { type: args.type } : {}),
-            ...(args.status ? { status: args.status } : {}),
-            ...(args.userId ? { userId: args.userId } : {}),
+        const { from, to, type, status, userId } = args;
+        const limit = args.limit ?? 2000;
+        const r = toRange(from, to);
+        const stages = [];
+        const push = (s) => {
+            if (!stages.includes(s))
+                stages.push(s);
         };
-        const rows = await this.prisma.appointment.findMany({
+        if (type === 'RV0') {
+            if (!status || status === 'PLANNED')
+                push(client_2.LeadStage.RV0_PLANNED);
+            if (!status || status === 'HONORED')
+                push(client_2.LeadStage.RV0_HONORED);
+            if (!status || status === 'NO_SHOW')
+                push(client_2.LeadStage.RV0_NO_SHOW);
+            if (!status || status === 'CANCELED')
+                push(client_2.LeadStage.RV0_CANCELED);
+        }
+        else if (type === 'RV1') {
+            if (!status || status === 'PLANNED')
+                push(client_2.LeadStage.RV1_PLANNED);
+            if (!status || status === 'HONORED')
+                push(client_2.LeadStage.RV1_HONORED);
+            if (!status || status === 'NO_SHOW')
+                push(client_2.LeadStage.RV1_NO_SHOW);
+            if (!status || status === 'CANCELED')
+                push(client_2.LeadStage.RV1_CANCELED);
+        }
+        else if (type === 'RV2') {
+            if (!status || status === 'PLANNED')
+                push(client_2.LeadStage.RV2_PLANNED);
+            if (!status || status === 'HONORED')
+                push(client_2.LeadStage.RV2_HONORED);
+            if (!status || status === 'NO_SHOW')
+                push(client_2.LeadStage.RV2_NO_SHOW);
+            if (!status || status === 'CANCELED')
+                push(client_2.LeadStage.RV2_CANCELED);
+            if (status === 'POSTPONED')
+                push(client_2.LeadStage.RV2_POSTPONED);
+        }
+        if (!type && status === 'NOT_QUALIFIED') {
+            push(client_2.LeadStage.NOT_QUALIFIED);
+        }
+        if (!stages.length) {
+            return { ok: true, count: 0, items: [] };
+        }
+        const where = {
+            toStage: { in: stages },
+            ...between('occurredAt', r),
+        };
+        if (userId) {
+            const leadFilter = {};
+            if (type === 'RV0') {
+                leadFilter.setterId = userId;
+            }
+            else if (type === 'RV1' || type === 'RV2') {
+                leadFilter.closerId = userId;
+            }
+            if (Object.keys(leadFilter).length) {
+                where.lead = { ...where.lead, ...leadFilter };
+            }
+            else {
+                where.userId = userId;
+            }
+        }
+        const rows = await this.prisma.stageEvent.findMany({
             where,
-            orderBy: { scheduledAt: 'desc' },
-            take: args.limit,
+            orderBy: { occurredAt: 'desc' },
+            take: limit,
             select: {
-                type: true, status: true, scheduledAt: true, userId: true,
+                occurredAt: true,
+                toStage: true,
                 lead: {
                     select: {
-                        id: true, firstName: true, lastName: true, email: true, phone: true,
+                        id: true,
+                        firstName: true,
+                        lastName: true,
+                        email: true,
+                        phone: true,
                         setter: { select: { id: true, firstName: true, email: true } },
                         closer: { select: { id: true, firstName: true, email: true } },
-                        saleValue: true, createdAt: true, stageUpdatedAt: true,
+                        saleValue: true,
+                        createdAt: true,
+                        stageUpdatedAt: true,
                     },
                 },
             },
         });
+        const statusFromStage = (s) => {
+            switch (s) {
+                case client_2.LeadStage.RV0_PLANNED:
+                case client_2.LeadStage.RV1_PLANNED:
+                case client_2.LeadStage.RV2_PLANNED:
+                    return 'PLANNED';
+                case client_2.LeadStage.RV0_HONORED:
+                case client_2.LeadStage.RV1_HONORED:
+                case client_2.LeadStage.RV2_HONORED:
+                    return 'HONORED';
+                case client_2.LeadStage.RV0_NO_SHOW:
+                case client_2.LeadStage.RV1_NO_SHOW:
+                case client_2.LeadStage.RV2_NO_SHOW:
+                    return 'NO_SHOW';
+                case client_2.LeadStage.RV0_CANCELED:
+                case client_2.LeadStage.RV1_CANCELED:
+                case client_2.LeadStage.RV2_CANCELED:
+                    return 'CANCELED';
+                case client_2.LeadStage.NOT_QUALIFIED:
+                    return 'NOT_QUALIFIED';
+                default:
+                    return 'UNKNOWN';
+            }
+        };
+        const typeFromStage = (s) => {
+            const v = String(s);
+            if (v.startsWith('RV0_'))
+                return 'RV0';
+            if (v.startsWith('RV1_'))
+                return 'RV1';
+            if (v.startsWith('RV2_'))
+                return 'RV2';
+            return 'PIPELINE';
+        };
         const items = rows
             .filter((r0) => !!r0.lead)
             .map((r0) => {
             const L = r0.lead;
+            const inferredStatus = statusFromStage(r0.toStage);
+            const inferredType = typeFromStage(r0.toStage);
+            const appStatus = status ?? inferredStatus;
+            const appType = type ?? inferredType;
             return {
                 leadId: L.id,
                 leadName: [L.firstName, L.lastName].filter(Boolean).join(' ') || '—',
-                email: L.email, phone: L.phone,
-                setter: L.setter ? { id: L.setter.id, name: L.setter.firstName, email: L.setter.email } : null,
-                closer: L.closer ? { id: L.closer.id, name: L.closer.firstName, email: L.closer.email } : null,
-                appointment: { type: r0.type, status: r0.status, scheduledAt: r0.scheduledAt.toISOString() },
+                email: L.email,
+                phone: L.phone,
+                setter: L.setter
+                    ? { id: L.setter.id, name: L.setter.firstName, email: L.setter.email }
+                    : null,
+                closer: L.closer
+                    ? { id: L.closer.id, name: L.closer.firstName, email: L.closer.email }
+                    : null,
+                appointment: {
+                    type: appType,
+                    status: appStatus,
+                    scheduledAt: r0.occurredAt.toISOString(),
+                },
                 saleValue: L.saleValue ?? null,
                 createdAt: L.createdAt.toISOString(),
                 stageUpdatedAt: L.stageUpdatedAt.toISOString(),

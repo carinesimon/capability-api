@@ -27,6 +27,7 @@ var StageDto;
     StageDto["RV1_NO_SHOW"] = "RV1_NO_SHOW";
     StageDto["RV2_PLANIFIE"] = "RV2_PLANIFIE";
     StageDto["RV2_HONORE"] = "RV2_HONORE";
+    StageDto["RV2_NO_SHOW"] = "RV2_NO_SHOW";
     StageDto["RV0_ANNULE"] = "RV0_CANCELED";
     StageDto["RV1_ANNULE"] = "RV1_CANCELED";
     StageDto["RV2_ANNULE"] = "RV2_CANCELED";
@@ -80,6 +81,7 @@ function normalizeStage(input) {
         RV1_NO_SHOW: StageDto.RV1_NO_SHOW, RDV1_NO_SHOW: StageDto.RV1_NO_SHOW,
         RV2_PLANIFIE: StageDto.RV2_PLANIFIE, RDV2_PLANIFIE: StageDto.RV2_PLANIFIE,
         RV2_HONORE: StageDto.RV2_HONORE, RV2_HONORE_: StageDto.RV2_HONORE, RDV2_HONORE: StageDto.RV2_HONORE,
+        RV2_NO_SHOW: StageDto.RV2_NO_SHOW, RDV2_NO_SHOW: StageDto.RV2_NO_SHOW,
         WON: StageDto.WON, LOST: StageDto.LOST, NOT_QUALIFIED: StageDto.NOT_QUALIFIED,
         RV0_ANNULE: StageDto.RV0_ANNULE,
         RV1_ANNULE: StageDto.RV1_ANNULE,

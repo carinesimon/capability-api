@@ -109,6 +109,7 @@ type WeeklyOpsRow = {
     rv1Postponed?: number;
     rv2Planned: number;
     rv2Honored: number;
+    rv2NoShow: number;
     rv2Postponed?: number;
     notQualified?: number;
     lost?: number;
@@ -129,6 +130,7 @@ type FunnelTotals = {
     rv1Canceled: number;
     rv2Planned: number;
     rv2Honored: number;
+    rv2NoShow: number;
     rv2Canceled: number;
     notQualified: number;
     lost: number;
@@ -319,36 +321,13 @@ export declare class ReportingService {
         from?: string;
         to?: string;
         type?: 'RV0' | 'RV1' | 'RV2';
-        status?: 'HONORED' | 'POSTPONED' | 'CANCELED' | 'NO_SHOW' | 'NOT_QUALIFIED';
+        status?: 'PLANNED' | 'HONORED' | 'POSTPONED' | 'CANCELED' | 'NO_SHOW' | 'NOT_QUALIFIED';
         userId?: string;
         limit: number;
     }): Promise<{
-        ok: boolean;
+        ok: true;
         count: number;
-        items: {
-            leadId: string;
-            leadName: string;
-            email: string | null;
-            phone: string | null;
-            setter: {
-                id: string;
-                name: string;
-                email: string;
-            } | null;
-            closer: {
-                id: string;
-                name: string;
-                email: string;
-            } | null;
-            appointment: {
-                type: import("@prisma/client").$Enums.AppointmentType;
-                status: import("@prisma/client").$Enums.AppointmentStatus;
-                scheduledAt: string;
-            };
-            saleValue: number | null;
-            createdAt: string;
-            stageUpdatedAt: string;
-        }[];
+        items: any[];
     }>;
     drillCallRequests(args: {
         from?: string;
