@@ -455,6 +455,7 @@ type WeeklyOpsRow = {
   rv1Postponed?: number;
   rv2Planned: number;
   rv2Honored: number;
+  rv2NoShow: number;
   rv2Postponed?: number;
   notQualified?: number;
   lost?: number;
@@ -478,6 +479,7 @@ type FunnelTotals = {
   rv1Canceled: number;  
   rv2Planned: number;
   rv2Honored: number;
+  rv2NoShow: number;
   rv2Canceled: number;  
   notQualified: number;
   lost: number;
@@ -1299,6 +1301,7 @@ private async ttfcBySetterViaStages(from?: string, to?: string): Promise<Map<str
         this.countSE({ stages: [LeadStage.RV1_CANCELED], r, by: { closerId: c.id } }),
         this.countSE({ stages: [LeadStage.RV2_PLANNED],  r, by: { closerId: c.id } }),
         this.countSE({ stages: [LeadStage.RV2_HONORED],  r, by: { closerId: c.id } }),
+        this.countSE({ stages: [LeadStage.RV2_NO_SHOW],  r, by: { closerId: c.id } }),
         this.countSE({ stages: [LeadStage.RV2_CANCELED], r, by: { closerId: c.id } }),
       ]);
 
@@ -1695,7 +1698,7 @@ async spotlightSetters(from?: string, to?: string): Promise<SpotlightSetterRow[]
       setterNoShow,
       rv0P, rv0H, rv0NS, rv0C,
       rv1P, rv1H, rv1NS, rv1C,
-      rv2P, rv2H, rv2C,
+      rv2P, rv2H, rv2NS, rv2C,
       notQual, lost,
       wonCount,
       appointmentCanceled,
@@ -1715,7 +1718,7 @@ async spotlightSetters(from?: string, to?: string): Promise<SpotlightSetterRow[]
       get(['RV1_PLANNED']), get(['RV1_HONORED']), get(['RV1_NO_SHOW']), get(['RV1_CANCELED']),
 
 
-      get(['RV2_PLANNED']), get(['RV2_HONORED']), get(['RV2_CANCELED']),
+      get(['RV2_PLANNED']), get(['RV2_HONORED']), get(['RV2_NO_SHOW']), get(['RV2_CANCELED']),
 
 
       get(['NOT_QUALIFIED']), get(['LOST']),
@@ -1756,6 +1759,8 @@ async spotlightSetters(from?: string, to?: string): Promise<SpotlightSetterRow[]
 
       rv2Planned: num(rv2P),
       rv2Honored: num(rv2H),
+      rv2NoShow: num(rv2NS),
+
       rv2Canceled: num(rv2C),
 
 
@@ -1816,12 +1821,16 @@ async spotlightSetters(from?: string, to?: string): Promise<SpotlightSetterRow[]
         rv0Planned: await this.countEnteredInStages(['RV0_PLANNED'], wRange),
         rv0Honored: await this.countEnteredInStages(['RV0_HONORED'], wRange),
         rv0NoShow: await this.countEnteredInStages(['RV0_NO_SHOW'], wRange),
+
         rv1Planned: await this.countEnteredInStages(['RV1_PLANNED'], wRange),
         rv1Honored: await this.countEnteredInStages(['RV1_HONORED'], wRange),
         rv1NoShow: await this.countEnteredInStages(['RV1_NO_SHOW'], wRange),
+
         rv2Planned: await this.countEnteredInStages(['RV2_PLANNED'], wRange),
         rv2Honored: await this.countEnteredInStages(['RV2_HONORED'], wRange),
+        rv2NoShow: await this.countEnteredInStages(['RV2_NO_SHOW'], wRange),
         rv2Postponed: await this.countEnteredInStages(['RV2_POSTPONED'], wRange),
+        
         notQualified: await this.countEnteredInStages(['NOT_QUALIFIED'], wRange),
         lost: await this.countEnteredInStages(['LOST'], wRange),
       };
@@ -1994,6 +2003,7 @@ async spotlightSetters(from?: string, to?: string): Promise<SpotlightSetterRow[]
     } else if (type === 'RV2') {
       if (!status || status === 'PLANNED')  push(LeadStage.RV2_PLANNED);
       if (!status || status === 'HONORED')  push(LeadStage.RV2_HONORED);
+      if (!status || status === 'NO_SHOW')  push(LeadStage.RV2_NO_SHOW);
       if (!status || status === 'CANCELED') push(LeadStage.RV2_CANCELED);
       if (status === 'POSTPONED')          push(LeadStage.RV2_POSTPONED as any);
     }
@@ -2069,6 +2079,7 @@ async spotlightSetters(from?: string, to?: string): Promise<SpotlightSetterRow[]
           return 'HONORED';
         case LeadStage.RV0_NO_SHOW:
         case LeadStage.RV1_NO_SHOW:
+        case LeadStage.RV2_NO_SHOW:
           return 'NO_SHOW';
         case LeadStage.RV0_CANCELED:
         case LeadStage.RV1_CANCELED:
