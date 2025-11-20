@@ -11,4 +11,6 @@ import { LeadsModule } from '../modules/leads/leads.module';
   controllers: [IntegrationsController, HookController],
   exports: [IntegrationsService, AutoAssignService],
 })
+  
 export class IntegrationsModule {}
+
