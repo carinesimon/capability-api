@@ -4,6 +4,7 @@ import { GhlService } from './ghl.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { LeadsModule } from '../../modules/leads/leads.module';
+
 @Module({
     imports: [
     PrismaModule,
@@ -13,3 +14,4 @@ import { LeadsModule } from '../../modules/leads/leads.module';
   providers: [GhlService, PrismaService],
 })
 export class GhlModule {}
+
