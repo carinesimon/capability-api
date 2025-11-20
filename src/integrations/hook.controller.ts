@@ -19,4 +19,6 @@ export class HookController {
     const ev = await this.svc.receiveWebhook(routeKey, contentType, payload);
     return { ok: true, eventId: ev.id };
   }
+  
 }
+
