@@ -87,6 +87,8 @@ const STAGE_ALIASES: Record<string, LeadStage | string> = {
   RV0_HONORÉ: 'RV0_HONORED',
   RV0_HONORED: 'RV0_HONORED',
   RV0_NO_SHOW: 'RV0_NO_SHOW',
+  RV0_CANCELED: 'RV0_CANCELED',
+  RV0_CANCELLED: 'RV0_CANCELLED',
 
   RV1_PLANIFIE: 'RV1_PLANNED',
   RV1_PLANIFIÉ: 'RV1_PLANNED',
@@ -95,6 +97,8 @@ const STAGE_ALIASES: Record<string, LeadStage | string> = {
   RV1_HONORÉ: 'RV1_HONORED',
   RV1_HONORED: 'RV1_HONORED',
   RV1_NO_SHOW: 'RV1_NO_SHOW',
+  RV1_CANCELED: 'RV1_CANCELED',
+  RV1_CANCELLED: 'RV1_CANCELLED',
 
   RV2_PLANIFIE: 'RV2_PLANNED',
   RV2_PLANIFIÉ: 'RV2_PLANNED',
@@ -103,6 +107,9 @@ const STAGE_ALIASES: Record<string, LeadStage | string> = {
   RV2_HONORÉ: 'RV2_HONORED',
   RV2_HONORED: 'RV2_HONORED',
   RV2_POSTPONED: 'RV2_POSTPONED',
+  RV2_CANCELED: 'RV2_CANCELED',
+  RV2_CANCELLED: 'RV0_CANCELLED',
+
 
   NON_QUALIFIE: 'NOT_QUALIFIED',
   NON_QUALIFIÉ: 'NOT_QUALIFIED',
@@ -156,7 +163,11 @@ function mapAppointmentToStage(type?: string | null, status?: string | null): Le
     if (t === 'RV0') return 'RV0_PLANNED';
   }
   // canceled → pas de stage
-  if (s === 'CANCELED' || s === 'CANCELLED') return null;
+  if (s === 'CANCELED' || s === 'CANCELLED') {
+    if (t === 'RV0') return 'RV0_CANCELED';
+    if (t === 'RV1') return 'RV1_CANCELED';
+    if (t === 'RV2') return 'RV2_CANCELED';
+  }
 
   // fallback: si seul le type est connu
   if (t === 'RV2') return 'RV2_PLANNED';
