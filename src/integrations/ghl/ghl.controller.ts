@@ -96,8 +96,8 @@ export class GhlController {
       });
       return { ok: true, handled: 'contact-fallback' };
     }
-
     // 7) Rien de pertinent
     return { ok: true, handled: 'ignored' };
   }
 }
+
