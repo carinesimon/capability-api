@@ -17,6 +17,7 @@ type RangeTz = { from?: string; to?: string; tz: string };
 const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 type RangeArgs = { from?: string; to?: string };
 
+
 /* ---------------- Dates helpers (UTC) ---------------- */
 function toUTCDateOnly(s?: string) {
   if (!s) return undefined;
@@ -324,11 +325,10 @@ type SetterRow = {
   name: string;
   email: string;
 
-
   // existants
   leadsReceived: number;
   rv0Count: number;
-  rv1FromHisLeads: number; // RV1 honorés (via StageEvent) sur ses leads
+  rv1FromHisLeads: number;      // RV1 honorés (via StageEvent) sur ses leads
   ttfcAvgMinutes: number | null;
   revenueFromHisLeads: number;
   spendShare: number | null;
@@ -337,11 +337,12 @@ type SetterRow = {
   cpRv1: number | null;
   roas: number | null;
 
-
-  rv1PlannedFromHisLeads: number;    // nb de RV1 planifiés sur ses leads
-  rv1CanceledFromHisLeads: number;   // nb de RV1 annulés sur ses leads
-  salesFromHisLeads: number;         // nb de ventes (WON) issues de ses leads
+  rv1PlannedFromHisLeads: number;     // nb de RV1 planifiés sur ses leads
+  rv1CanceledFromHisLeads: number;    // nb de RV1 annulés sur ses leads
+  rv1NoShowFromHisLeads: number;      // ✅ nb de RV1 no-show sur ses leads
+  salesFromHisLeads: number;          // nb de ventes (WON) issues de ses leads
 };
+
 
 
 type CloserRow = {
@@ -349,24 +350,24 @@ type CloserRow = {
   name: string;
   email: string;
 
-
   // existants
   rv1Planned: number;
   rv1Honored: number;
   rv1NoShow: number;
   rv2Planned: number;
   rv2Honored: number;
+  rv2NoShow: number;             // ✅ RV2 no-show
   salesClosed: number;
   revenueTotal: number;
   roasPlanned: number | null;
   roasHonored: number | null;
 
-
   rv1Canceled: number;
   rv2Canceled: number;
-  rv1CancelRate: number | null; // annulés / planifiés (RV1)
-  rv2CancelRate: number | null; // annulés / planifiés (RV2)
+  rv1CancelRate: number | null;  // annulés / planifiés (RV1)
+  rv2CancelRate: number | null;  // annulés / planifiés (RV2)
 };
+
 
 
 type SpotlightSetterRow = {
@@ -374,20 +375,18 @@ type SpotlightSetterRow = {
   name: string;
   email: string;
 
-
   // Demande utilisateur — Setters
-  rv1PlannedOnHisLeads: number;     // RV1 planifiés (sur ses leads)
-  rv1DoneOnHisLeads: number;        // RV1 Fait (honorés) sur ses leads (via StageEvent RV1_HONORED)
-  rv1CanceledOnHisLeads: number;    // RV1 annulés (sur ses leads)
-  rv1CancelRate: number | null;     // % d’annulation RV1 (annulés/planifiés)
+  rv1PlannedOnHisLeads: number;      // RV1 planifiés (sur ses leads)
+  rv1DoneOnHisLeads: number;         // RV1 honorés (ses leads)
+  rv1CanceledOnHisLeads: number;     // RV1 annulés (ses leads)
+  rv1NoShowOnHisLeads: number;       // ✅ RV1 no-show (ses leads)
+  rv1CancelRate: number | null;      // % annulation RV1
+  rv1NoShowRate: number | null;      // % no-show RV1
 
+  salesFromHisLeads: number;         // Ventes depuis ses leads (WON count)
+  revenueFromHisLeads: number;       // CA depuis ses leads (sum saleValue)
 
-  salesFromHisLeads: number;        // Ventes depuis ses leads (WON count)
-  revenueFromHisLeads: number;      // CA depuis ses leads (sum saleValue)
-
-
-  settingRate: number | null;       // Taux de setting = RV1 planifiés / Leads reçus
-
+  settingRate: number | null;        // Taux de setting = RV1 planifiés / Leads reçus
 
   // Contexte pour l’UI
   leadsReceived: number;
@@ -395,23 +394,23 @@ type SpotlightSetterRow = {
 };
 
 
+
 type SpotlightCloserRow = {
   userId: string;
   name: string;
   email: string;
 
-
   // Demande utilisateur — Closers
   rv1Planned: number;               // RV1 planifiés pour le closer
-  rv1Honored: number;               // RV1 Fait pour le closer (via StageEvent RV1_HONORED)
-  rv1Canceled: number;              // RV1 annulés pour le closer
+  rv1Honored: number;               // RV1 honorés
+  rv1Canceled: number;              // RV1 annulés
+  rv1NoShow: number;                // ✅ RV1 no-show
   rv1CancelRate: number | null;     // % d’annulation RV1
-
 
   rv2Planned: number;               // RV2 planifiés
   rv2Canceled: number;              // RV2 annulés
+  rv2NoShow: number;                // ✅ RV2 no-show
   rv2CancelRate: number | null;     // % d’annulation RV2
-
 
   salesClosed: number;              // Ventes (WON) par le closer
   revenueTotal: number;             // CA total
@@ -1096,12 +1095,19 @@ private async ttfcBySetterViaStages(from?: string, to?: string): Promise<Map<str
     const leadsReceived = leads.length;
 
 
-    // RV1 planned / canceled / honored DISTINCT par lead (via StageEvent)
-    const [rv1PlannedFromHisLeads, rv1CanceledFromHisLeads, rv1FromHisLeads] = await Promise.all([
-      this.countSE({ stages: [LeadStage.RV1_PLANNED],  r, by: { setterId: s.id }, distinctByLead: true }),
-      this.countSE({ stages: [LeadStage.RV1_CANCELED], r, by: { setterId: s.id }, distinctByLead: true }),
-      this.countSE({ stages: [LeadStage.RV1_HONORED],  r, by: { setterId: s.id }, distinctByLead: true }),
+    // RV1 planned / canceled / no-show / honored DISTINCT par lead (via StageEvent)
+    const [
+      rv1PlannedFromHisLeads,
+      rv1CanceledFromHisLeads,
+      rv1NoShowFromHisLeads,
+      rv1FromHisLeads,
+    ] = await Promise.all([
+      this.countSE({ stages: [LeadStage.RV1_PLANNED],   r, by: { setterId: s.id }, distinctByLead: true }),
+      this.countSE({ stages: [LeadStage.RV1_CANCELED],  r, by: { setterId: s.id }, distinctByLead: true }),
+      this.countSE({ stages: [LeadStage.RV1_NO_SHOW],   r, by: { setterId: s.id }, distinctByLead: true }),
+      this.countSE({ stages: [LeadStage.RV1_HONORED],   r, by: { setterId: s.id }, distinctByLead: true }),
     ]);
+
 
 
     // RV0 réalisés par le setter (rdv tenus)
@@ -1146,30 +1152,29 @@ private async ttfcBySetterViaStages(from?: string, to?: string): Promise<Map<str
       : null;
 
 
-    rows.push({
+      rows.push({
       userId: s.id,
       name: s.firstName,
       email: s.email,
 
-
       leadsReceived: num(leadsReceived),
       rv0Count: num(rv0Count),
 
-
       rv1FromHisLeads: num(rv1FromHisLeads),
-      ttfcAvgMinutes, // 👈 nouveau TTFC (CALL_REQUESTED -> CALL_ATTEMPT par SETTER)
-
+      ttfcAvgMinutes, // 👈 TTFC (CALL_REQUESTED -> CALL_ATTEMPT par SETTER)
 
       revenueFromHisLeads,
       salesFromHisLeads: num(salesFromHisLeads),
 
-
       spendShare: Number(spendShare.toFixed(2)),
-      cpl, cpRv0, cpRv1, roas,
-
+      cpl,
+      cpRv0,
+      cpRv1,
+      roas,
 
       rv1PlannedFromHisLeads:  num(rv1PlannedFromHisLeads),
       rv1CanceledFromHisLeads: num(rv1CanceledFromHisLeads),
+      rv1NoShowFromHisLeads:   num(rv1NoShowFromHisLeads),   // ✅ nouveau
     });
   }
 
@@ -1292,6 +1297,7 @@ private async ttfcBySetterViaStages(from?: string, to?: string): Promise<Map<str
         rv1Canceled,
         rv2Planned,
         rv2Honored,
+        rv2NoShow,
         rv2Canceled,
       ] = await Promise.all([
         this.countSE({ stages: [LeadStage.RV1_PLANNED],  r, by: { closerId: c.id } }),
@@ -1303,7 +1309,6 @@ private async ttfcBySetterViaStages(from?: string, to?: string): Promise<Map<str
         this.countSE({ stages: [LeadStage.RV2_NO_SHOW],  r, by: { closerId: c.id } }),
         this.countSE({ stages: [LeadStage.RV2_CANCELED], r, by: { closerId: c.id } }),
       ]);
-
 
       // Ventes/CA rattachées au closer (même logique WON que partout)
       const wonWhere: any = await this.wonFilter(r);
@@ -1342,7 +1347,7 @@ private async ttfcBySetterViaStages(from?: string, to?: string): Promise<Map<str
 
         rv2Planned: num(rv2Planned),
         rv2Honored: num(rv2Honored),
-
+        rv2NoShow: num(rv2NoShow),   // ✅ nouveau
 
         salesClosed: num(salesClosed),
         revenueTotal,
@@ -1375,93 +1380,94 @@ private async ttfcBySetterViaStages(from?: string, to?: string): Promise<Map<str
 async spotlightSetters(from?: string, to?: string): Promise<SpotlightSetterRow[]> {
   const base = await this.settersReport(from, to);
 
-
   const rows: SpotlightSetterRow[] = base.map((r) => {
     const rv1CancelRate =
-      r.rv1PlannedFromHisLeads ? Number((r.rv1CanceledFromHisLeads / r.rv1PlannedFromHisLeads).toFixed(4)) : null;
-    const settingRate =
-      r.leadsReceived ? Number((r.rv1PlannedFromHisLeads / r.leadsReceived).toFixed(4)) : null;
+      r.rv1PlannedFromHisLeads
+        ? Number((r.rv1CanceledFromHisLeads / r.rv1PlannedFromHisLeads).toFixed(4))
+        : null;
 
+    const rv1NoShowRate =
+      r.rv1PlannedFromHisLeads
+        ? Number((r.rv1NoShowFromHisLeads / r.rv1PlannedFromHisLeads).toFixed(4))
+        : null;
+
+    const settingRate =
+      r.leadsReceived
+        ? Number((r.rv1PlannedFromHisLeads / r.leadsReceived).toFixed(4))
+        : null;
 
     return {
       userId: r.userId,
       name: r.name,
       email: r.email,
 
-
-      rv1PlannedOnHisLeads: r.rv1PlannedFromHisLeads,
-      rv1DoneOnHisLeads: r.rv1FromHisLeads,          // ✅ “RV1 honorés (ses leads)”
-      rv1CanceledOnHisLeads: r.rv1CanceledFromHisLeads,
+      rv1PlannedOnHisLeads:   r.rv1PlannedFromHisLeads,
+      rv1DoneOnHisLeads:      r.rv1FromHisLeads,          // RV1 honorés (ses leads)
+      rv1CanceledOnHisLeads:  r.rv1CanceledFromHisLeads,
+      rv1NoShowOnHisLeads:    r.rv1NoShowFromHisLeads,    // ✅ no-show (ses leads)
       rv1CancelRate,
+      rv1NoShowRate,
 
-
-      salesFromHisLeads: r.salesFromHisLeads,
-      revenueFromHisLeads: r.revenueFromHisLeads,
-
+      salesFromHisLeads:      r.salesFromHisLeads,
+      revenueFromHisLeads:    r.revenueFromHisLeads,
 
       settingRate,
-      leadsReceived: r.leadsReceived,
+      leadsReceived:          r.leadsReceived,
 
-
-      ttfcAvgMinutes: r.ttfcAvgMinutes,              // ✅ on renvoie le TTFC
+      ttfcAvgMinutes:         r.ttfcAvgMinutes,
     };
   });
-
 
   rows.sort(
     (a, b) =>
       b.revenueFromHisLeads - a.revenueFromHisLeads ||
       b.rv1PlannedOnHisLeads - a.rv1PlannedOnHisLeads,
   );
+
   return rows;
 }
 
 
   /* ====================== SPOTLIGHT CLOSERS ====================== */
   async spotlightClosers(from?: string, to?: string): Promise<SpotlightCloserRow[]> {
-    const base = await this.closersReport(from, to);
+  const base = await this.closersReport(from, to);
 
+  const rows: SpotlightCloserRow[] = base.map((r) => {
+    // Taux de closing = ventes / RV1 honorés
+    const closingRate =
+      r.rv1Honored ? Number((r.salesClosed / r.rv1Honored).toFixed(4)) : null;
 
-    const rows: SpotlightCloserRow[] = base.map((r) => {
-      // Taux de closing = ventes / RV1 honorés
-      const closingRate =
-        r.rv1Honored ? Number((r.salesClosed / r.rv1Honored).toFixed(4)) : null;
+    return {
+      userId: r.userId,
+      name: r.name,
+      email: r.email,
 
+      rv1Planned:   r.rv1Planned,
+      rv1Honored:   r.rv1Honored,
+      rv1Canceled:  r.rv1Canceled,
+      rv1NoShow:    r.rv1NoShow,      // ✅ no-show RV1
+      rv1CancelRate: r.rv1CancelRate,
 
-      return {
-        userId: r.userId,
-        name: r.name,
-        email: r.email,
+      rv2Planned:   r.rv2Planned,
+      rv2Canceled:  r.rv2Canceled,
+      rv2NoShow:    r.rv2NoShow,      // ✅ no-show RV2
+      rv2CancelRate: r.rv2CancelRate,
 
+      salesClosed:  r.salesClosed,
+      revenueTotal: r.revenueTotal,
+      closingRate,
+    };
+  });
 
-        rv1Planned: r.rv1Planned,
-        rv1Honored: r.rv1Honored,
-        rv1Canceled: r.rv1Canceled,
-        rv1CancelRate: r.rv1CancelRate,
+  // Tri : CA desc puis ventes desc
+  rows.sort(
+    (a, b) =>
+      b.revenueTotal - a.revenueTotal ||
+      b.salesClosed - a.salesClosed,
+  );
 
-
-        rv2Planned: r.rv2Planned,
-        rv2Canceled: r.rv2Canceled,
-        rv2CancelRate: r.rv2CancelRate,
-
-
-        salesClosed: r.salesClosed,
-        revenueTotal: r.revenueTotal,
-        closingRate,
-      };
-    });
-
-
-    // Tri : CA desc puis ventes desc
-    rows.sort(
-      (a, b) =>
-        b.revenueTotal - a.revenueTotal ||
-        b.salesClosed - a.salesClosed,
-    );
-
-
-    return rows;
-  }
+  return rows;
+}
 
 
   /* ---------------- Équipe de choc (duos setter × closer) ---------------- */
@@ -2284,7 +2290,3 @@ async spotlightSetters(from?: string, to?: string): Promise<SpotlightSetterRow[]
     return { ok: true, count: items.length, items };
   }
 }
-
-
-
-
