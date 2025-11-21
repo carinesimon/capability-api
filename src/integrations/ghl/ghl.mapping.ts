@@ -9,4 +9,6 @@ export function mapGhlStageToLeadStage(ghlStageName?: string): "UNASSIGNED"|"RV0
   if (["lost","perdu"].includes(name)) return "LOST";
   if (["not qualified","not_qualified","nq"].includes(name)) return "NOT_QUALIFIED";
   return null;
+  
 }
+
