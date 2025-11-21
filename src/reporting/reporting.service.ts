@@ -17,7 +17,6 @@ type RangeTz = { from?: string; to?: string; tz: string };
 const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 type RangeArgs = { from?: string; to?: string };
 
-
 /* ---------------- Dates helpers (UTC) ---------------- */
 function toUTCDateOnly(s?: string) {
   if (!s) return undefined;
@@ -2285,6 +2284,7 @@ async spotlightSetters(from?: string, to?: string): Promise<SpotlightSetterRow[]
     return { ok: true, count: items.length, items };
   }
 }
+
 
 
 
