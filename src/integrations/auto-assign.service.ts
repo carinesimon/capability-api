@@ -58,7 +58,6 @@ export class AutoAssignService {
       select: { id: true },
     });
     return u;
-    
   }
 
   private async findUserByName(name: string, role: Role) {
@@ -240,4 +239,3 @@ const patch: Prisma.LeadUpdateInput = {};
     return result;
   }
 }
-

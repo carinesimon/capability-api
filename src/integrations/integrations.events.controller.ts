@@ -14,7 +14,6 @@ export class IntegrationsEventsController {
    *
    * POST /integrations/events/:id/replay?mode=createNew
    */
-  
   @Post(':id/replay')
   @HttpCode(200)
   async replay(
@@ -27,4 +26,3 @@ export class IntegrationsEventsController {
     return result;
   }
 }
-
