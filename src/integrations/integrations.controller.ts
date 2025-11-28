@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestj
 import { IntegrationsService } from './integrations.service';
 import { LeadStage } from '@prisma/client';
 
+
 @Controller('integrations')
 export class IntegrationsController {
   constructor(private readonly svc: IntegrationsService) {}
@@ -69,4 +70,3 @@ async get(@Param('id') id: string) {
     return this.svc.replayEvent(eventId);
   }
 }
-
