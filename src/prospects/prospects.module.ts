@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ReportingService } from '../reporting/reporting.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { StageEventsService } from '../modules/leads/stage-events.service';
+
 @Module({
     imports: [
     PrismaModule,   // si non-global
@@ -20,4 +21,3 @@ import { StageEventsService } from '../modules/leads/stage-events.service';
   exports: [ProspectsService],
 })
 export class ProspectsModule {}
-

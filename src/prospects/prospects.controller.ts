@@ -9,7 +9,6 @@ import {
   Put,
   Query,
 } from '@nestjs/common';
-
 import { ProspectsService } from './prospects.service';
 import { LeadStage, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -158,4 +157,3 @@ export class ProspectsController {
   }
 
 }
-
