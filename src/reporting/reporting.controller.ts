@@ -2,7 +2,6 @@
 // backend/src/modules/reporting/reporting.controller.ts
 import { Body, Controller, Get, Post, Query, Res } from '@nestjs/common';
 import { ReportingService } from './reporting.service';
-
 @Controller()
 export class ReportingController {
   constructor(private readonly reporting: ReportingService) {}
@@ -290,3 +289,4 @@ async exportSpotlightClosersPdf(
     return this.reporting.canceledDaily(from, to);
   }
 }
+
