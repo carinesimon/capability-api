@@ -1,5 +1,6 @@
 // backend/src/modules/reporting/reporting.controller.ts
-import { Controller, Get, Query, Res } from '@nestjs/common';
+// backend/src/modules/reporting/reporting.controller.ts
+import { Body, Controller, Get, Post, Query, Res } from '@nestjs/common';
 import { ReportingService } from './reporting.service';
 
 @Controller()
@@ -15,6 +16,34 @@ export class ReportingController {
   ) {
     return this.reporting.summary(from, to);
   }
+
+  /* --------- Budgets (comptable) --------- */
+
+  @Get('reporting/budget')
+  async getBudgets() {
+    // Retourne la liste des budgets hebdos, utilisée par BudgetPanel
+    return this.reporting.listWeeklyBudgets();
+  }
+
+  @Post('reporting/budget')
+  async upsertBudget(
+    @Body()
+    body: {
+      weekStartISO: string; // ex: '2025-11-24'
+      amount: number;       // ex: 500
+    },
+  ) {
+    const weekStartISO = body.weekStartISO;
+    const parsedAmount = Number(body.amount) || 0;
+
+    const budget = await this.reporting.upsertWeeklyBudget(
+      weekStartISO,
+      parsedAmount,
+    );
+
+    return { ok: true, budget };
+  }
+
 
   @Get('reporting/leads-received')
   async getLeadsReceived(
