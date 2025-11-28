@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable} from '@nestjs/common';
 import { Prisma } from '@prisma/client'; // en haut du fichier
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -28,6 +28,15 @@ function toUTCDateOnly(s?: string) {
   const [y, m, d] = s.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
 }
+
+function isBusinessHour(dateUtc: Date, tz: string): boolean {
+  // On projette la date en timezone métier (ex: "Europe/Paris")
+  const localStr = dateUtc.toLocaleString("en-US", { timeZone: tz });
+  const local = new Date(localStr);
+  const h = local.getHours();
+  return h >= 8 && h < 21;
+}
+
 
 // --------- Moteur PDF avancé (header, sections, table, footer) ---------
 // --------- Moteur PDF avancé (header, sections, table, footer) ---------
@@ -350,25 +359,35 @@ type CloserRow = {
   name: string;
   email: string;
 
-  // existants
+  // --- RV1 ---
   rv1Planned: number;
   rv1Honored: number;
   rv1NoShow: number;
+  rv1Canceled: number;
+  rv1Postponed: number;      // RV1_POSTPONED
+  rv1NotQualified: number;   // RV1_NOT_QUALIFIED
+
+  // --- RV2 ---
   rv2Planned: number;
   rv2Honored: number;
-  rv2NoShow: number;             // ✅ RV2 no-show
-  salesClosed: number;
-  revenueTotal: number;
+  rv2NoShow: number;
+  rv2Canceled: number;
+  rv2Postponed: number;      // RV2_POSTPONED
+
+  // --- Contrats / ventes / CA ---
+  contractsSigned: number;   // CONTRACT_SIGNED
+  salesClosed: number;       // WON count
+  revenueTotal: number;      // sum saleValue
+
+  // --- ROAS & % ---
   roasPlanned: number | null;
   roasHonored: number | null;
 
-  rv1Canceled: number;
-  rv2Canceled: number;
-  rv1CancelRate: number | null;  // annulés / planifiés (RV1)
-  rv2CancelRate: number | null;  // annulés / planifiés (RV2)
+  rv1CancelRate: number | null;    // annulés / planifiés (RV1)
+  rv1NoShowRate?: number | null;   // no-show / planifiés (RV1)
+  rv2CancelRate: number | null;    // annulés / planifiés (RV2)
+  rv2NoShowRate?: number | null;   // no-show / planifiés (RV2)
 };
-
-
 
 type SpotlightSetterRow = {
   userId: string;
@@ -392,7 +411,6 @@ type SpotlightSetterRow = {
   leadsReceived: number;
   ttfcAvgMinutes: number | null;
 };
-
 
 
 type SpotlightCloserRow = {
@@ -467,30 +485,42 @@ type FunnelTotals = {
   callsTotal: number;
   callsAnswered: number;
   setterNoShow: number;
+
   rv0Planned: number;
   rv0Honored: number;
   rv0NoShow: number;
-  rv0Canceled: number;  
+  rv0Canceled: number;
+
   rv1Planned: number;
   rv1Honored: number;
   rv1NoShow: number;
-  rv1Canceled: number;  
+  rv1Canceled: number;
+  rv1Postponed: number;        // 🔥 nouveau si tu as un stage RV1_POSTPONED
+
   rv2Planned: number;
   rv2Honored: number;
   rv2NoShow: number;
-  rv2Canceled: number;  
+  rv2Canceled: number;
+  rv2Postponed: number;        // RV2 reportés
+
+  rv0NotQualified: number;
+  rv1NotQualified: number;
+
+  followUpSetter: number;
+  followUpCloser: number;
+
   notQualified: number;
   lost: number;
   wonCount: number;
   appointmentCanceled: number;
 };
+
 type FunnelWeeklyRow = { weekStart: string; weekEnd: string } & FunnelTotals;
 type FunnelOut = {
   period: { from?: string; to?: string };
   totals: FunnelTotals;
   weekly: FunnelWeeklyRow[];
 };
-
 
 /* ---------- Duos (setter × closer) ---------- */
 type DuoRow = {
@@ -670,7 +700,6 @@ async exportSpotlightClosersCSV({ from, to }: RangeArgs): Promise<Buffer> {
 }
 
 
-// ---- PDF (PDFKit) ----
 // ---- PDF (PDFKit) ----
 private async buildSpotlightPDF(
   title: string,
@@ -890,23 +919,129 @@ async exportSpotlightClosersPDF({ from, to }: { from?: string; to?: string }): P
 }
 
   /* ---------------- Budgets ---------------- */
+
+  /**
+   * Somme des budgets sur la période donnée, alignée avec les semaines (weekStart → weekEnd).
+   * Utilisé par summary / ROAS.
+   */
   private async sumSpend(r: Range): Promise<number> {
     const budgets = await this.prisma.budget.findMany({
       where: { period: BudgetPeriod.WEEKLY },
     });
+
+    // Pas de fenêtre -> on prend tout
     if (!r.from && !r.to) {
       return budgets.reduce((s, b) => s + num(b.amount), 0);
     }
+
     let sum = 0;
     for (const b of budgets) {
       if (!b.weekStart) continue;
       const ws = mondayOfUTC(new Date(b.weekStart));
       const we = sundayOfUTC(new Date(b.weekStart));
+
+      // Intersection entre [ws;we] et [r.from;r.to]
       if ((r.from ? ws <= r.to! : true) && (r.to ? we >= r.from! : true)) {
         sum += num(b.amount);
       }
     }
     return sum;
+  }
+
+  /**
+   * Crée ou met à jour un budget hebdomadaire pour la semaine de `weekStartISO`.
+   * `weekStartISO` doit être un lundi (YYYY-MM-DD).
+   */
+  async upsertWeeklyBudget(weekStartISO: string, amount: number) {
+    const weekStart = mondayOfUTC(new Date(weekStartISO));
+
+    return this.prisma.budget.upsert({
+      where: {
+        // nécessite un unique index sur (period, weekStart)
+        period_weekStart: {
+          period: BudgetPeriod.WEEKLY,
+          weekStart,
+        },
+      },
+      update: { amount },
+      create: {
+        period: BudgetPeriod.WEEKLY,
+        weekStart,
+        amount,
+      },
+    });
+  }
+
+  /**
+   * Liste des budgets hebdos pour le comptable.
+   * Aligné avec le type Budget utilisé dans BudgetPanel.tsx.
+   */
+  async listWeeklyBudgets(): Promise<
+    Array<{
+      id: string;
+      period: BudgetPeriod;
+      amount: number;
+      weekStart: string | null;   // ISO string
+      monthStart: string | null;  // ISO string
+      createdAt: string;
+      updatedAt: string;
+    }>
+  > {
+    const rows = await this.prisma.budget.findMany({
+      where: { period: BudgetPeriod.WEEKLY },
+      orderBy: { weekStart: 'asc' },
+    });
+
+    return rows.map((b) => ({
+      id: b.id,
+      period: b.period,
+      amount: num(b.amount),
+      weekStart: b.weekStart ? b.weekStart.toISOString() : null,
+      monthStart: b.monthStart ? b.monthStart.toISOString() : null,
+      createdAt: b.createdAt.toISOString(),
+      updatedAt: b.updatedAt.toISOString(),
+    }));
+  }
+
+  /**
+   * Liste les budgets hebdomadaires utilisés par sumSpend,
+   * pour affichage / édition côté front.
+   */
+  async weeklyBudgets(
+    from?: string,
+    to?: string,
+  ): Promise<Array<{ weekStart: string; weekEnd: string; amount: number }>> {
+    const r = toRange(from, to);
+
+    const budgets = await this.prisma.budget.findMany({
+      where: { period: BudgetPeriod.WEEKLY },
+      orderBy: { weekStart: 'asc' },
+    });
+
+    const rows: Array<{ weekStart: string; weekEnd: string; amount: number }> = [];
+
+    for (const b of budgets) {
+      if (!b.weekStart) continue;
+
+      const ws = mondayOfUTC(new Date(b.weekStart));
+      const we = sundayOfUTC(new Date(b.weekStart));
+
+      // si on a un range, on ne garde que les semaines qui intersectent
+      if (r.from && r.to) {
+        const intersects = !(ws > r.to || we < r.from);
+        if (!intersects) continue;
+      }
+
+      rows.push({
+        weekStart: ws.toISOString(),
+        weekEnd: we.toISOString(),
+        amount: num(b.amount),
+      });
+    }
+
+    // tri au cas où
+    rows.sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+    return rows;
   }
 
 
@@ -1012,17 +1147,19 @@ private async ttfcBySetter(from?: string, to?: string): Promise<Map<string, { av
   return map;
 }
 
-
-/** TTFC par SETTER (minutes) via StageEvent:
- *  - point A = 1ère entrée dans CALL_REQUESTED du lead (dans [from;to])
+/** TTFC par SETTER (minutes) via StageEvent, en heures d'ouverture uniquement :
+ *  - point A = 1ère entrée dans CALL_REQUESTED du lead (dans [from;to]) ET entre 08:00 et 21:00 (heure locale `tz`)
  *  - point B = 1ère entrée dans CALL_ATTEMPT du lead, postérieure à A
  *  - attribution = setter actuel de la fiche (Lead.setterId)
- *  Renvoie Map<setterId, { avg, n }>.
+ *  - on exclut donc les demandes d'appel (CALL_REQUESTED) arrivées entre 21h et 8h.
  */
-private async ttfcBySetterViaStages(from?: string, to?: string): Promise<Map<string, { avg: number; n: number }>> {
+private async ttfcBySetterViaStages(
+  from?: string,
+  to?: string,
+  tz = 'Europe/Paris',
+): Promise<Map<string, { avg: number; n: number }>> {
   const r = toRange(from, to);
   if (!r.from || !r.to) return new Map();
-
 
   const rows = await this.prisma.$queryRaw<Array<{ setterId: string; avg: number; n: number }>>(Prisma.sql`
     WITH first_req AS (
@@ -1033,6 +1170,9 @@ private async ttfcBySetterViaStages(from?: string, to?: string): Promise<Map<str
       WHERE se."toStage" = ${Prisma.sql`'CALL_REQUESTED'::"LeadStage"`}
         AND se."occurredAt" >= ${r.from!}
         AND se."occurredAt" <= ${r.to!}
+        -- 🔥 Filtre heures d'ouverture : 08h <= heure locale < 21h
+        AND EXTRACT(HOUR FROM (se."occurredAt" AT TIME ZONE ${tz})) >= 8
+        AND EXTRACT(HOUR FROM (se."occurredAt" AT TIME ZONE ${tz})) < 21
       ORDER BY se."leadId", se."occurredAt" ASC
     ),
     first_attempt AS (
@@ -1052,16 +1192,17 @@ private async ttfcBySetterViaStages(from?: string, to?: string): Promise<Map<str
     FROM first_req fr
     JOIN first_attempt fa ON fa."leadId" = fr."leadId"
     JOIN "Lead" l ON l."id" = fr."leadId"
-    WHERE fa."attemptAt" >= fr."requestedAt" AND l."setterId" IS NOT NULL
+    WHERE fa."attemptAt" >= fr."requestedAt"
+      AND l."setterId" IS NOT NULL
     GROUP BY l."setterId"
   `);
 
-
   const map = new Map<string, { avg: number; n: number }>();
-  for (const r0 of rows) map.set(r0.setterId, { avg: Number(r0.avg), n: r0.n });
+  for (const r0 of rows) {
+    map.set(r0.setterId, { avg: Number(r0.avg), n: r0.n });
+  }
   return map;
 }
-
 
   /* ---------------- Setters (TTFC + RV1 via StageEvent) ---------------- */
   async settersReport(from?: string, to?: string): Promise<SetterRow[]> {
@@ -1228,51 +1369,101 @@ private async ttfcBySetterViaStages(from?: string, to?: string): Promise<Map<str
   }
 
 
-  /* =================== CANCELED DAILY (RV0/RV1/RV2) =================== */
-  async canceledDaily(from?: string, to?: string, tz = 'Europe/Paris') {
-  if (!from || !to) {
-    const total = await this.prisma.appointment.count({ where: { status: AppointmentStatus.CANCELED } });
-    return { total: num(total), byDay: [] as Array<any> };
+    /* =================== CANCELED DAILY (RV1/RV2 annulé + reporté) =================== */
+  async canceledDaily(
+    from?: string,
+    to?: string,
+    tz = 'Europe/Paris',
+  ): Promise<{
+    total: number;
+    byDay: Array<{
+      day: string;
+      rv1CanceledPostponed: number;
+      rv2CanceledPostponed: number;
+      total: number;
+    }>;
+  }> {
+    // Pas de fenêtre → on renvoie juste le total global et un byDay vide
+    if (!from || !to) {
+      const total = await this.prisma.stageEvent.count({
+        where: {
+          toStage: {
+            in: [
+              'RV1_CANCELED',
+              'RV1_POSTPONED',
+              'RV2_CANCELED',
+              'RV2_POSTPONED',
+            ] as any,
+          },
+        },
+      });
+      return {
+        total: num(total),
+        byDay: [],
+      };
+    }
+
+    // 1) On récupère 4 séries journalières via StageEvent
+    const [rv1Canceled, rv1Postponed, rv2Canceled, rv2Postponed] =
+      await Promise.all([
+        this.perDayFromStageEvents([LeadStage.RV1_CANCELED], from, to, tz),
+        this.perDayFromStageEvents(['RV1_POSTPONED'], from, to, tz),
+        this.perDayFromStageEvents([LeadStage.RV2_CANCELED], from, to, tz),
+        this.perDayFromStageEvents(['RV2_POSTPONED'], from, to, tz),
+      ]);
+
+    // 2) On fusionne dans une map jour → { rv1, rv2 }
+    const map = new Map<string, { rv1: number; rv2: number }>();
+
+    const addSeries = (
+      src: { byDay?: { day: string; count: number }[] } | null | undefined,
+      key: 'rv1' | 'rv2',
+    ) => {
+      const arr = src?.byDay ?? [];
+      for (const row of arr) {
+        if (!row?.day) continue;
+        const dayKey = row.day.length >= 10
+          ? row.day.slice(0, 10)
+          : new Date(row.day).toISOString().slice(0, 10);
+
+        const bucket = map.get(dayKey) ?? { rv1: 0, rv2: 0 };
+        bucket[key] += num(row.count || 0);
+        map.set(dayKey, bucket);
+      }
+    };
+
+    // RV1 = annulé + reporté
+    addSeries(rv1Canceled, 'rv1');
+    addSeries(rv1Postponed, 'rv1');
+
+    // RV2 = annulé + reporté
+    addSeries(rv2Canceled, 'rv2');
+    addSeries(rv2Postponed, 'rv2');
+
+    // 3) On génère un range continu de jours locaux [from;to]
+    const byDay: Array<{
+      day: string;
+      rv1CanceledPostponed: number;
+      rv2CanceledPostponed: number;
+      total: number;
+    }> = [];
+
+    for (const day of daysSpanLocal(from, to)) {
+      const bucket = map.get(day) ?? { rv1: 0, rv2: 0 };
+      const rv1CanceledPostponed = num(bucket.rv1);
+      const rv2CanceledPostponed = num(bucket.rv2);
+      byDay.push({
+        day,
+        rv1CanceledPostponed,
+        rv2CanceledPostponed,
+        total: rv1CanceledPostponed + rv2CanceledPostponed,
+      });
+    }
+
+    const total = byDay.reduce((s, r) => s + num(r.total), 0);
+    return { total, byDay };
   }
 
-  const byDay: Array<{ day: string; RV0_CANCELED: number; RV1_CANCELED: number; RV2_CANCELED: number; total: number }> = [];
-  for (const day of daysSpanLocal(from, to)) {
-    const daySql = Prisma.sql`${day}::date`;
-
-    const [rv0, rv1, rv2] = await Promise.all([
-      this.prisma.$queryRaw<Array<{ n: number }>>(Prisma.sql`
-        SELECT COUNT(*)::int AS n
-        FROM "Appointment"
-        WHERE "type" = 'RV0'
-          AND "status" = 'CANCELED'
-          AND (("scheduledAt" AT TIME ZONE ${tz})::date = ${daySql})
-      `),
-      this.prisma.$queryRaw<Array<{ n: number }>>(Prisma.sql`
-        SELECT COUNT(*)::int AS n
-        FROM "Appointment"
-        WHERE "type" = 'RV1'
-          AND "status" = 'CANCELED'
-          AND (("scheduledAt" AT TIME ZONE ${tz})::date = ${daySql})
-      `),
-      this.prisma.$queryRaw<Array<{ n: number }>>(Prisma.sql`
-        SELECT COUNT(*)::int AS n
-        FROM "Appointment"
-        WHERE "type" = 'RV2'
-          AND "status" = 'CANCELED'
-          AND (("scheduledAt" AT TIME ZONE ${tz})::date = ${daySql})
-      `),
-    ]);
-
-    const r0 = num(rv0?.[0]?.n ?? 0);
-    const r1 = num(rv1?.[0]?.n ?? 0);
-    const r2 = num(rv2?.[0]?.n ?? 0);
-
-    byDay.push({ day, RV0_CANCELED: r0, RV1_CANCELED: r1, RV2_CANCELED: r2, total: r0 + r1 + r2 });
-  }
-
-  const total = byDay.reduce((s, x) => s + num(x.total), 0);
-  return { total, byDay };
-}
 
   /* ---------------- Closers (tout via StageEvent) ---------------- */
   async closersReport(from?: string, to?: string): Promise<CloserRow[]> {
@@ -1283,34 +1474,47 @@ private async ttfcBySetterViaStages(from?: string, to?: string): Promise<Map<str
       orderBy: { firstName: 'asc' },
     });
 
-
     const spend = await this.sumSpend(r);
-
 
     const rows: CloserRow[] = [];
     for (const c of closers) {
-      // Agrégations StageEvent côté closer (occurredAt dans [from;to])
       const [
+        // --- RV1 ---
         rv1Planned,
         rv1HonoredCount,
         rv1NoShow,
         rv1Canceled,
+        rv1Postponed,
+        rv1NotQualified,
+
+        // --- RV2 ---
         rv2Planned,
         rv2Honored,
         rv2NoShow,
         rv2Canceled,
+        rv2Postponed,
+
+        // --- Contrats signés ---
+        contractsSigned,
       ] = await Promise.all([
-        this.countSE({ stages: [LeadStage.RV1_PLANNED],  r, by: { closerId: c.id } }),
-        this.countSE({ stages: [LeadStage.RV1_HONORED],  r, by: { closerId: c.id } }),
-        this.countSE({ stages: [LeadStage.RV1_NO_SHOW],  r, by: { closerId: c.id } }),
-        this.countSE({ stages: [LeadStage.RV1_CANCELED], r, by: { closerId: c.id } }),
-        this.countSE({ stages: [LeadStage.RV2_PLANNED],  r, by: { closerId: c.id } }),
-        this.countSE({ stages: [LeadStage.RV2_HONORED],  r, by: { closerId: c.id } }),
-        this.countSE({ stages: [LeadStage.RV2_NO_SHOW],  r, by: { closerId: c.id } }),
-        this.countSE({ stages: [LeadStage.RV2_CANCELED], r, by: { closerId: c.id } }),
+        this.countSE({ stages: [LeadStage.RV1_PLANNED],         r, by: { closerId: c.id } }),
+        this.countSE({ stages: [LeadStage.RV1_HONORED],         r, by: { closerId: c.id } }),
+        this.countSE({ stages: [LeadStage.RV1_NO_SHOW],         r, by: { closerId: c.id } }),
+        this.countSE({ stages: [LeadStage.RV1_CANCELED],        r, by: { closerId: c.id } }),
+        this.countSE({ stages: [LeadStage.RV1_POSTPONED as any], r, by: { closerId: c.id } }),
+        this.countSE({ stages: [LeadStage.RV1_NOT_QUALIFIED],   r, by: { closerId: c.id } }),
+
+        this.countSE({ stages: [LeadStage.RV2_PLANNED],         r, by: { closerId: c.id } }),
+        this.countSE({ stages: [LeadStage.RV2_HONORED],         r, by: { closerId: c.id } }),
+        this.countSE({ stages: [LeadStage.RV2_NO_SHOW],         r, by: { closerId: c.id } }),
+        this.countSE({ stages: [LeadStage.RV2_CANCELED],        r, by: { closerId: c.id } }),
+        this.countSE({ stages: [LeadStage.RV2_POSTPONED as any], r, by: { closerId: c.id } }),
+
+        // ⚠️ nécessite d'ajouter CONTRACT_SIGNED dans l'enum LeadStage + StageEvent
+        this.countSE({ stages: [LeadStage.CONTRACT_SIGNED as any], r, by: { closerId: c.id } }),
       ]);
 
-      // Ventes/CA rattachées au closer (même logique WON que partout)
+      // Ventes / CA (WON) rattachées au closer
       const wonWhere: any = await this.wonFilter(r);
       wonWhere.closerId = c.id;
       const wonAgg = await this.prisma.lead.aggregate({
@@ -1320,8 +1524,7 @@ private async ttfcBySetterViaStages(from?: string, to?: string): Promise<Map<str
       const revenueTotal = num(wonAgg._sum?.saleValue ?? 0);
       const salesClosed = await this.prisma.lead.count({ where: wonWhere });
 
-
-      // ROAS contextualisés (ex: par RV1 planned/honored)
+      // ROAS contextuels (si tu veux les garder)
       const roasPlanned = rv1Planned
         ? Number(((revenueTotal || 0) / (spend || 1) / rv1Planned).toFixed(2))
         : null;
@@ -1329,39 +1532,43 @@ private async ttfcBySetterViaStages(from?: string, to?: string): Promise<Map<str
         ? Number(((revenueTotal || 0) / (spend || 1) / rv1HonoredCount).toFixed(2))
         : null;
 
-
+      // % annulation & no-show
       const rv1CancelRate = rv1Planned ? Number((rv1Canceled / rv1Planned).toFixed(4)) : null;
       const rv2CancelRate = rv2Planned ? Number((rv2Canceled / rv2Planned).toFixed(4)) : null;
-
+      const rv1NoShowRate = rv1Planned ? Number((rv1NoShow / rv1Planned).toFixed(4)) : null;
+      const rv2NoShowRate = rv2Planned ? Number((rv2NoShow / rv2Planned).toFixed(4)) : null;
 
       rows.push({
         userId: c.id,
         name: c.firstName,
         email: c.email,
 
+        rv1Planned:    num(rv1Planned),
+        rv1Honored:    num(rv1HonoredCount),
+        rv1NoShow:     num(rv1NoShow),
+        rv1Canceled:   num(rv1Canceled),
+        rv1Postponed:  num(rv1Postponed),
+        rv1NotQualified: num(rv1NotQualified),
 
-        rv1Planned: num(rv1Planned),
-        rv1Honored: num(rv1HonoredCount),
-        rv1NoShow: num(rv1NoShow),
+        rv2Planned:    num(rv2Planned),
+        rv2Honored:    num(rv2Honored),
+        rv2NoShow:     num(rv2NoShow),
+        rv2Canceled:   num(rv2Canceled),
+        rv2Postponed:  num(rv2Postponed),
 
+        contractsSigned: num(contractsSigned),
 
-        rv2Planned: num(rv2Planned),
-        rv2Honored: num(rv2Honored),
-        rv2NoShow: num(rv2NoShow),   // ✅ nouveau
-
-        salesClosed: num(salesClosed),
+        salesClosed:  num(salesClosed),
         revenueTotal,
         roasPlanned,
         roasHonored,
 
-
-        rv1Canceled: num(rv1Canceled),
-        rv2Canceled: num(rv2Canceled),
         rv1CancelRate,
+        rv1NoShowRate,
         rv2CancelRate,
+        rv2NoShowRate,
       });
     }
-
 
     // Tri : CA desc puis ventes desc
     rows.sort(
@@ -1369,7 +1576,6 @@ private async ttfcBySetterViaStages(from?: string, to?: string): Promise<Map<str
         b.revenueTotal - a.revenueTotal ||
         b.salesClosed - a.salesClosed,
     );
-
 
     return rows;
   }
@@ -1428,46 +1634,53 @@ async spotlightSetters(from?: string, to?: string): Promise<SpotlightSetterRow[]
 }
 
 
-  /* ====================== SPOTLIGHT CLOSERS ====================== */
+    /* ====================== SPOTLIGHT CLOSERS ====================== */
   async spotlightClosers(from?: string, to?: string): Promise<SpotlightCloserRow[]> {
-  const base = await this.closersReport(from, to);
+    const base = await this.closersReport(from, to);
 
-  const rows: SpotlightCloserRow[] = base.map((r) => {
-    // Taux de closing = ventes / RV1 honorés
-    const closingRate =
-      r.rv1Honored ? Number((r.salesClosed / r.rv1Honored).toFixed(4)) : null;
+    const rows: SpotlightCloserRow[] = base.map((r) => {
+      const closingRate =
+        r.rv1Honored ? Number((r.salesClosed / r.rv1Honored).toFixed(4)) : null;
 
-    return {
-      userId: r.userId,
-      name: r.name,
-      email: r.email,
+      return {
+        userId: r.userId,
+        name: r.name,
+        email: r.email,
 
-      rv1Planned:   r.rv1Planned,
-      rv1Honored:   r.rv1Honored,
-      rv1Canceled:  r.rv1Canceled,
-      rv1NoShow:    r.rv1NoShow,      // ✅ no-show RV1
-      rv1CancelRate: r.rv1CancelRate,
+        rv1Planned:     r.rv1Planned,
+        rv1Honored:     r.rv1Honored,
+        rv1NoShow:      r.rv1NoShow,
+        rv1Canceled:    r.rv1Canceled,
+        rv1Postponed:   r.rv1Postponed,
+        rv1NotQualified: r.rv1NotQualified,
+        rv1CancelRate:  r.rv1CancelRate,
+        rv1NoShowRate:  r.rv1NoShowRate ?? null,
 
-      rv2Planned:   r.rv2Planned,
-      rv2Canceled:  r.rv2Canceled,
-      rv2NoShow:    r.rv2NoShow,      // ✅ no-show RV2
-      rv2CancelRate: r.rv2CancelRate,
+        rv2Planned:     r.rv2Planned,
+        rv2Honored:     r.rv2Honored,
+        rv2NoShow:      r.rv2NoShow,
+        rv2Canceled:    r.rv2Canceled,
+        rv2Postponed:   r.rv2Postponed,
+        rv2CancelRate:  r.rv2CancelRate,
+        rv2NoShowRate:  r.rv2NoShowRate ?? null,
 
-      salesClosed:  r.salesClosed,
-      revenueTotal: r.revenueTotal,
-      closingRate,
-    };
-  });
+        contractsSigned: r.contractsSigned,
 
-  // Tri : CA desc puis ventes desc
-  rows.sort(
-    (a, b) =>
-      b.revenueTotal - a.revenueTotal ||
-      b.salesClosed - a.salesClosed,
-  );
+        salesClosed:   r.salesClosed,
+        revenueTotal:  r.revenueTotal,
+        closingRate,
+      };
+    });
 
-  return rows;
-}
+    rows.sort(
+      (a, b) =>
+        b.revenueTotal - a.revenueTotal ||
+        b.salesClosed - a.salesClosed,
+    );
+
+    return rows;
+  }
+
 
 
   /* ---------------- Équipe de choc (duos setter × closer) ---------------- */
@@ -1663,6 +1876,7 @@ async spotlightSetters(from?: string, to?: string): Promise<SpotlightSetterRow[]
     return num(await this.prisma.lead.count({ where }));
   }
 
+  
 
   /* ----------- Batch métriques pipeline pour le front (funnel cartes) ----------- */
   async pipelineMetrics(args: {
@@ -1693,54 +1907,73 @@ async spotlightSetters(from?: string, to?: string): Promise<SpotlightSetterRow[]
   private async funnelFromStages(r: Range): Promise<FunnelTotals> {
     const get = (keys: string[]) => this.countEnteredInStages(keys, r);
 
-
-    // ✅ version alignée avec FunnelTotals (sans POSTPONED)
     const [
-      leadsCreated,
-      callReq,
-      calls,
-      answered,
-      setterNoShow,
-      rv0P, rv0H, rv0NS, rv0C,
-      rv1P, rv1H, rv1NS, rv1C,
-      rv2P, rv2H, rv2NS, rv2C,
-      notQual, lost,
-      wonCount,
-      appointmentCanceled,
-    ] = await Promise.all([
-      this.prisma.lead.count({ where: between('createdAt', r) }),
+  leadsCreated,
+  callReq,
+  calls,
+  answered,
+  setterNoShow,
 
+  rv0P, rv0H, rv0NS, rv0C, rv0NotQ,
+  rv1P, rv1H, rv1NS, rv1C, rv1NotQ, rv1Post,
+  rv2P, rv2H, rv2NS, rv2C, rv2Post,
 
-      get(['CALL_REQUESTED']),
-      get(['CALL_ATTEMPT']),
-      get(['CALL_ANSWERED']),
-      get(['SETTER_NO_SHOW']),
+  followUpSetter,
+  followUpCloser,
+  notQual,
+  lost,
+  wonCount,
+  appointmentCanceled,
+] = await Promise.all([
+  // Leads reçus
+  this.prisma.lead.count({ where: between('createdAt', r) }),
 
+  // Demandes d’appel / appels / réponses
+  get(['CALL_REQUESTED']),
+  get(['CALL_ATTEMPT']),
+  get(['CALL_ANSWERED']),
+  get(['SETTER_NO_SHOW']),
 
-      get(['RV0_PLANNED']), get(['RV0_HONORED']), get(['RV0_NO_SHOW']), get(['RV0_CANCELED']),
+  // RV0
+  get(['RV0_PLANNED']),
+  get(['RV0_HONORED']),
+  get(['RV0_NO_SHOW']),
+  get(['RV0_CANCELED']),
+  get(['RV0_NOT_QUALIFIED']),
 
+  // RV1
+  get(['RV1_PLANNED']),
+  get(['RV1_HONORED']),
+  get(['RV1_NO_SHOW']),
+  get(['RV1_CANCELED']),
+  get(['RV1_NOT_QUALIFIED']),
+  get(['RV1_POSTPONED']),   // 🔥 ici
 
-      get(['RV1_PLANNED']), get(['RV1_HONORED']), get(['RV1_NO_SHOW']), get(['RV1_CANCELED']),
+  // RV2
+  get(['RV2_PLANNED']),
+  get(['RV2_HONORED']),
+  get(['RV2_NO_SHOW']),
+  get(['RV2_CANCELED']),
+  get(['RV2_POSTPONED']),
 
+  // Follow up
+  get(['FOLLOW_UP']),
+  get(['FOLLOW_UP_CLOSER']),
 
-      get(['RV2_PLANNED']), get(['RV2_HONORED']), get(['RV2_NO_SHOW']), get(['RV2_CANCELED']),
+  // Flags globaux
+  get(['NOT_QUALIFIED']),
+  get(['LOST']),
 
+  // WON
+  (async () => {
+    const where = await this.wonFilter(r);
+    return this.prisma.lead.count({ where });
+  })(),
 
-      get(['NOT_QUALIFIED']), get(['LOST']),
-
-
-      // → utilise le même critère que partout ailleurs pour WON
-      (async () => {
-        const where = await this.wonFilter(r);
-        return this.prisma.lead.count({ where });
-      })(),
-
-
-      this.prisma.appointment.count({
-        where: { status: AppointmentStatus.CANCELED, ...between('scheduledAt', r) },
-      }),
-    ]);
-
+  this.prisma.appointment.count({
+    where: { status: AppointmentStatus.CANCELED, ...between('scheduledAt', r) },
+  }),
+]);
 
     return {
       leads: num(leadsCreated),
@@ -1749,30 +1982,34 @@ async spotlightSetters(from?: string, to?: string): Promise<SpotlightSetterRow[]
       callsAnswered: num(answered),
       setterNoShow: num(setterNoShow),
 
-
       rv0Planned: num(rv0P),
       rv0Honored: num(rv0H),
       rv0NoShow: num(rv0NS),
       rv0Canceled: num(rv0C),
 
-
       rv1Planned: num(rv1P),
       rv1Honored: num(rv1H),
       rv1NoShow: num(rv1NS),
       rv1Canceled: num(rv1C),
-
+      rv1Postponed: num(rv1Post), // 🔥 nouveau
 
       rv2Planned: num(rv2P),
       rv2Honored: num(rv2H),
       rv2NoShow: num(rv2NS),
-
       rv2Canceled: num(rv2C),
 
+      // 🔥 nouveaux champs
+      rv2Postponed: num(rv2Post),
+
+      rv0NotQualified: num(rv0NotQ),
+      rv1NotQualified: num(rv1NotQ),
+
+      followUpSetter: num(followUpSetter),
+      followUpCloser: num(followUpCloser),
 
       notQualified: num(notQual),
       lost: num(lost),
       wonCount: num(wonCount),
-
 
       appointmentCanceled: num(appointmentCanceled),
     };
