@@ -17,6 +17,7 @@ import { StageEventsService } from '../modules/leads/stage-events.service';
    ========  NOUVEAU : Catalogue & colonnes ops  =========== 
    ========================================================= */
 
+
 export type PipelineMetricKey =
   | 'LEADS_RECEIVED'
   | 'CALL_REQUESTED'
@@ -1292,3 +1293,4 @@ async putColumnsConfig(payload: Array<{
     });
   }
 }
+
