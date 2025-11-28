@@ -35,9 +35,13 @@ model User {
   createdCallRequests CallRequest[] @relation("UserCreatedCallRequests")
   callAttempts        CallAttempt[]
 
+  // 👇 NOUVELLE RELATION INVERSE
+  stageEvents StageEvent[]
+
   @@index([role, isActive])
   @@index([createdAt])
 }
+
 
 // Prospects entrants — étapes du Kanban Prospects
 model Lead {
@@ -177,14 +181,17 @@ model Contract {
 model Budget {
   id         String       @id @default(cuid())
   period     BudgetPeriod
-  amount     Float
+  amount     Int
   weekStart  DateTime?
   monthStart DateTime?
+
+  // 🔽 Nouveau : CA encaissé saisi par la comptable
+  caEncaisse Int          @default(0)
+
   createdAt  DateTime     @default(now())
   updatedAt  DateTime     @updatedAt
 
-  @@index([period, weekStart])
-  @@index([period, monthStart])
+  @@unique([period, weekStart])
 }
 
 // Disponibilités
@@ -342,11 +349,13 @@ enum LeadStage {
   CALL_ATTEMPT
   CALL_ANSWERED
   SETTER_NO_SHOW
-  FOLLOW_UP
+  FOLLOW_UP        // Follow up Setter / RV0
+  FOLLOW_UP_CLOSER // 🔥 nouveau : Follow up Closer (RV1 / RV2)
 
   RV0_PLANNED
   RV0_HONORED
   RV0_NO_SHOW
+  RV0_POSTPONED 
   RV0_CANCELED
 
   RV1_PLANNED
@@ -361,8 +370,13 @@ enum LeadStage {
   RV2_POSTPONED
   RV2_CANCELED
 
+
+  RV0_NOT_QUALIFIED
+  RV1_NOT_QUALIFIED
+
   NOT_QUALIFIED
   LOST
+  CONTRACT_SIGNED   // 👈 nouveau
   WON
 }
 
@@ -526,12 +540,17 @@ model StageEvent {
   externalId String?    @unique // pour idempotence si fourni par un webhook
   dedupHash  String?    @unique // fallback idempotence (ex: leadId|toStage|minute)
 
+  /// 🔥 NOUVEAU : qui a provoqué le changement de stage (optionnel)
+  userId String?
+  user   User? @relation(fields: [userId], references: [id])
+
   // 👇 relation nommée qui matche Lead.stageEvents
   lead Lead @relation(name: "LeadToStageEvent", fields: [leadId], references: [id], onDelete: Cascade)
 
   @@unique([leadId, toStage]) // 1er passage seulement
   @@index([toStage, occurredAt])
   @@index([leadId, toStage, occurredAt])
+  @@index([userId, occurredAt]) // 👈 pour filtrer par user si besoin
 }
 
 // prisma/schema.prisma
