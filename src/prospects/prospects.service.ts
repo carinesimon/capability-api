@@ -24,9 +24,11 @@ export type PipelineMetricKey =
   | 'CALL_ANSWERED'
   | 'SETTER_NO_SHOW'
   | 'FOLLOW_UP'
+  | 'FOLLOW_UP_CLOSER'
   | 'RV0_PLANNED'
   | 'RV0_HONORED'
   | 'RV0_NO_SHOW'
+  | 'RV0_POSTPONED'
   | 'RV0_CANCELED'
   | 'RV1_PLANNED'
   | 'RV1_HONORED'
@@ -38,10 +40,14 @@ export type PipelineMetricKey =
   | 'RV2_NO_SHOW'
   | 'RV2_POSTPONED'
   | 'RV2_CANCELED'
+  | 'RV0_NOT_QUALIFIED'
+  | 'RV1_NOT_QUALIFIED'
   | 'NOT_QUALIFIED'
   | 'LOST'
+  | 'CONTRACT_SIGNED'
   | 'WON'
   | 'APPOINTMENT_CANCELED';
+
 
 const DEFAULT_METRICS: Array<{
   key: PipelineMetricKey;
@@ -50,69 +56,76 @@ const DEFAULT_METRICS: Array<{
   order: number;
   enabled: boolean;
 }> = [
-  { key: 'LEADS_RECEIVED',       label: 'Leads reçus',             sourcePath: 'funnel.totals.leads',               order: 0,   enabled: true },
-  { key: 'CALL_REQUESTED',       label: 'Demandes d’appel',        sourcePath: 'funnel.totals.callRequests',        order: 1,   enabled: true },
-  { key: 'CALL_ATTEMPT',         label: 'Appels passés',           sourcePath: 'funnel.totals.callsTotal',          order: 2,   enabled: true },
-  { key: 'CALL_ANSWERED',        label: 'Appels répondus',         sourcePath: 'funnel.totals.callsAnswered',       order: 3,   enabled: true },
-  { key: 'SETTER_NO_SHOW',       label: 'No-show Setter',          sourcePath: 'funnel.totals.setterNoShow',        order: 4,   enabled: true },
-  { key: 'FOLLOW_UP',            label: 'Follow Up (Financement)', sourcePath: 'funnel.totals.followUp',            order: 5,   enabled: true },
+  { key: 'LEADS_RECEIVED',       label: 'Leads reçus',                sourcePath: 'funnel.totals.leads',               order: 0,    enabled: true },
+  { key: 'CALL_REQUESTED',       label: 'Demandes d’appel',           sourcePath: 'funnel.totals.callRequests',        order: 1,    enabled: true },
+  { key: 'CALL_ATTEMPT',         label: 'Appels passés',              sourcePath: 'funnel.totals.callsTotal',          order: 2,    enabled: true },
+  { key: 'CALL_ANSWERED',        label: 'Appels répondus',            sourcePath: 'funnel.totals.callsAnswered',       order: 3,    enabled: true },
+  { key: 'SETTER_NO_SHOW',       label: 'No-show Setter',             sourcePath: 'funnel.totals.setterNoShow',        order: 4,    enabled: true },
+  { key: 'FOLLOW_UP',            label: 'Follow Up (Setter)',         sourcePath: 'funnel.totals.followUp',            order: 5,    enabled: true },
+  { key: 'FOLLOW_UP_CLOSER',     label: 'Follow Up Closer',           sourcePath: 'funnel.totals.followUpCloser',      order: 5.5,  enabled: true },
 
-  { key: 'RV0_PLANNED',          label: 'RV0 planifiés',           sourcePath: 'funnel.totals.rv0Planned',          order: 6,   enabled: true },
-  { key: 'RV0_HONORED',          label: 'RV0 honorés',             sourcePath: 'funnel.totals.rv0Honored',          order: 7,   enabled: true },
-  { key: 'RV0_NO_SHOW',          label: 'RV0 no-show',             sourcePath: 'funnel.totals.rv0NoShow',           order: 8,   enabled: true },
+  { key: 'RV0_PLANNED',          label: 'RV0 planifiés',              sourcePath: 'funnel.totals.rv0Planned',          order: 6,    enabled: true },
+  { key: 'RV0_HONORED',          label: 'RV0 honorés',                sourcePath: 'funnel.totals.rv0Honored',          order: 7,    enabled: true },
+  { key: 'RV0_NO_SHOW',          label: 'RV0 no-show',                sourcePath: 'funnel.totals.rv0NoShow',           order: 8,    enabled: true },
+  { key: 'RV0_POSTPONED',        label: 'RV0 reportés',               sourcePath: 'funnel.totals.rv0Postponed',        order: 8.2,  enabled: false },
+  { key: 'RV0_CANCELED',         label: 'RV0 annulés',                sourcePath: 'funnel.totals.rv0Canceled',         order: 8.5,  enabled: false },
 
-  { key: 'RV1_PLANNED',          label: 'RV1 planifiés',           sourcePath: 'funnel.totals.rv1Planned',          order: 9,   enabled: true },
-  { key: 'RV1_HONORED',          label: 'RV1 honorés',             sourcePath: 'funnel.totals.rv1Honored',          order: 10,  enabled: true },
-  { key: 'RV1_NO_SHOW',          label: 'RV1 no-show',             sourcePath: 'funnel.totals.rv1NoShow',           order: 11,  enabled: true },
-  { key: 'RV1_POSTPONED',        label: 'RV1 reportés',            sourcePath: 'funnel.totals.rv1Postponed',        order: 12,  enabled: true },
+  { key: 'RV1_PLANNED',          label: 'RV1 planifiés',              sourcePath: 'funnel.totals.rv1Planned',          order: 9,    enabled: true },
+  { key: 'RV1_HONORED',          label: 'RV1 honorés',                sourcePath: 'funnel.totals.rv1Honored',          order: 10,   enabled: true },
+  { key: 'RV1_NO_SHOW',          label: 'RV1 no-show',                sourcePath: 'funnel.totals.rv1NoShow',           order: 11,   enabled: true },
+  { key: 'RV1_POSTPONED',        label: 'RV1 reportés',               sourcePath: 'funnel.totals.rv1Postponed',        order: 12,   enabled: true },
+  { key: 'RV1_CANCELED',         label: 'RV1 annulés',                sourcePath: 'funnel.totals.rv1Canceled',         order: 12.5, enabled: true },
+  { key: 'RV1_NOT_QUALIFIED',    label: 'RV1 non qualifiés',          sourcePath: 'funnel.totals.rv1NotQualified',     order: 12.7, enabled: false },
 
-  { key: 'RV2_PLANNED',          label: 'RV2 planifiés',           sourcePath: 'funnel.totals.rv2Planned',          order: 13,  enabled: true },
-  { key: 'RV2_HONORED',          label: 'RV2 honorés',             sourcePath: 'funnel.totals.rv2Honored',          order: 14,  enabled: true },
-  { key: 'RV2_NO_SHOW',          label: 'RV2 no-show',             sourcePath: 'funnel.totals.rv2NoShow',           order: 20,  enabled: true },
+  { key: 'RV2_PLANNED',          label: 'RV2 planifiés',              sourcePath: 'funnel.totals.rv2Planned',          order: 13,   enabled: false },
+  { key: 'RV2_HONORED',          label: 'RV2 honorés',                sourcePath: 'funnel.totals.rv2Honored',          order: 14,   enabled: false },
+  { key: 'RV2_NO_SHOW',          label: 'RV2 no-show',                sourcePath: 'funnel.totals.rv2NoShow',           order: 20,   enabled: false },
+  { key: 'RV2_POSTPONED',        label: 'RV2 reportés',               sourcePath: 'funnel.totals.rv2Postponed',        order: 15,   enabled: false },
+  { key: 'RV2_CANCELED',         label: 'RV2 annulés',                sourcePath: 'funnel.totals.rv2Canceled',         order: 15.5, enabled: false },
 
-  { key: 'RV2_POSTPONED',        label: 'RV2 reportés',            sourcePath: 'funnel.totals.rv2Postponed',        order: 15,  enabled: true },
+  { key: 'APPOINTMENT_CANCELED', label: 'RDV annulés (tous)',         sourcePath: 'funnel.totals.appointmentCanceled', order: 16,   enabled: true },
 
-  { key: 'APPOINTMENT_CANCELED', label: 'RDV annulés',             sourcePath: 'funnel.totals.appointmentCanceled', order: 16,  enabled: true },
-
-  { key: 'NOT_QUALIFIED',        label: 'Non qualifiés',           sourcePath: 'funnel.totals.notQualified',        order: 17,  enabled: true },
-  { key: 'LOST',                 label: 'Perdus',                  sourcePath: 'funnel.totals.lost',                order: 18,  enabled: true },
-  { key: 'WON',                  label: 'Ventes (WON)',            sourcePath: 'funnel.totals.wonCount',            order: 19,  enabled: true },
-
-  // Annulés détaillés (optionnels dans le catalogue)
-  { key: 'RV0_CANCELED',         label: 'RV0 annulés',             sourcePath: 'funnel.totals.rv0Canceled',         order: 8.5,  enabled: false },
-  { key: 'RV1_CANCELED',         label: 'RV1 annulés',             sourcePath: 'funnel.totals.rv1Canceled',         order: 11.5, enabled: true  },
-  { key: 'RV2_CANCELED',         label: 'RV2 annulés',             sourcePath: 'funnel.totals.rv2Canceled',         order: 15.5, enabled: false },
+  { key: 'RV0_NOT_QUALIFIED',    label: 'RV0 non qualifiés',          sourcePath: 'funnel.totals.rv0NotQualified',     order: 17,   enabled: false },
+  { key: 'NOT_QUALIFIED',        label: 'Non qualifiés (global)',     sourcePath: 'funnel.totals.notQualified',        order: 17.5, enabled: true },
+  { key: 'LOST',                 label: 'Perdus',                     sourcePath: 'funnel.totals.lost',                order: 18,   enabled: true },
+  { key: 'CONTRACT_SIGNED',      label: 'Contrats signés',            sourcePath: 'funnel.totals.contractsSigned',     order: 18.5, enabled: true },
+  { key: 'WON',                  label: 'Ventes (WON)',               sourcePath: 'funnel.totals.wonCount',            order: 19,   enabled: true },
 ];
 
 // mapping LeadStage -> type d'événement à logger (legacy leadEvent)
 const STAGE_TO_EVENT: Partial<Record<LeadStage, string>> = {
-  LEADS_RECEIVED:  'LEAD_CREATED',
-  CALL_REQUESTED:  'CALL_REQUESTED',
-  CALL_ATTEMPT:    'CALL_ATTEMPT',
-  CALL_ANSWERED:   'CALL_ANSWERED',
-  SETTER_NO_SHOW:  'SETTER_NO_SHOW',
-  FOLLOW_UP:       'FOLLOW_UP',
+  LEADS_RECEIVED:   'LEAD_CREATED',
+  CALL_REQUESTED:   'CALL_REQUESTED',
+  CALL_ATTEMPT:     'CALL_ATTEMPT',
+  CALL_ANSWERED:    'CALL_ANSWERED',
+  SETTER_NO_SHOW:   'SETTER_NO_SHOW',
+  FOLLOW_UP:        'FOLLOW_UP',
+  FOLLOW_UP_CLOSER: 'FOLLOW_UP_CLOSER',
 
-  RV0_PLANNED:     'APPOINTMENT_PLANNED_RV0',
-  RV0_HONORED:     'APPOINTMENT_HONORED_RV0',
-  RV0_NO_SHOW:     'APPOINTMENT_NOSHOW_RV0',
-  RV0_CANCELED:    'APPOINTMENT_CANCELED_RV0',
+  RV0_PLANNED:      'APPOINTMENT_PLANNED_RV0',
+  RV0_HONORED:      'APPOINTMENT_HONORED_RV0',
+  RV0_NO_SHOW:      'APPOINTMENT_NOSHOW_RV0',
+  RV0_POSTPONED:    'APPOINTMENT_POSTPONED_RV0',
+  RV0_CANCELED:     'APPOINTMENT_CANCELED_RV0',
 
-  RV1_PLANNED:     'APPOINTMENT_PLANNED_RV1',
-  RV1_HONORED:     'APPOINTMENT_HONORED_RV1',
-  RV1_NO_SHOW:     'APPOINTMENT_NOSHOW_RV1',
-  RV1_POSTPONED:   'APPOINTMENT_POSTPONED_RV1',
-  RV1_CANCELED:    'APPOINTMENT_CANCELED_RV1',
+  RV1_PLANNED:      'APPOINTMENT_PLANNED_RV1',
+  RV1_HONORED:      'APPOINTMENT_HONORED_RV1',
+  RV1_NO_SHOW:      'APPOINTMENT_NOSHOW_RV1',
+  RV1_POSTPONED:    'APPOINTMENT_POSTPONED_RV1',
+  RV1_CANCELED:     'APPOINTMENT_CANCELED_RV1',
 
-  RV2_PLANNED:     'APPOINTMENT_PLANNED_RV2',
-  RV2_HONORED:     'APPOINTMENT_HONORED_RV2',
-  RV2_NO_SHOW:     'APPOINTMENT_NOSHOW_RV2',
-  RV2_POSTPONED:   'APPOINTMENT_POSTPONED_RV2',
-  RV2_CANCELED:    'APPOINTMENT_CANCELED_RV2',
+  RV2_PLANNED:      'APPOINTMENT_PLANNED_RV2',
+  RV2_HONORED:      'APPOINTMENT_HONORED_RV2',
+  RV2_NO_SHOW:      'APPOINTMENT_NOSHOW_RV2',
+  RV2_POSTPONED:    'APPOINTMENT_POSTPONED_RV2',
+  RV2_CANCELED:     'APPOINTMENT_CANCELED_RV2',
 
-  NOT_QUALIFIED:   'NOT_QUALIFIED',
-  LOST:            'LOST',
-  WON:             'WON',
+  RV0_NOT_QUALIFIED:'RV0_NOT_QUALIFIED',
+  RV1_NOT_QUALIFIED:'RV1_NOT_QUALIFIED',
+  NOT_QUALIFIED:    'NOT_QUALIFIED',
+  LOST:             'LOST',
+  CONTRACT_SIGNED:  'CONTRACT_SIGNED',
+  WON:              'WON',
 };
 
 // Événements cumulés via leadEvent (legacy) pour moveStage
@@ -121,12 +134,18 @@ const EVENT_BASED_STAGES: LeadStage[] = [
   'CALL_ATTEMPT',
   'CALL_ANSWERED',
   'SETTER_NO_SHOW',
+  'FOLLOW_UP',
+  'FOLLOW_UP_CLOSER',
   'NOT_QUALIFIED',
+  'RV0_NOT_QUALIFIED',
+  'RV1_NOT_QUALIFIED',
   'LOST',
   'RV0_CANCELED',
   'RV1_CANCELED',
   'RV2_CANCELED',
+  'CONTRACT_SIGNED',
 ];
+
 
 type OpsColumn = { key: PipelineMetricKey; label: string; count: number };
 
@@ -376,36 +395,39 @@ export class ProspectsService {
      ========================================================= */
 
   private DEFAULT_BOARD_COLUMNS: Array<{ label: string; stage?: LeadStage | null; order: number; enabled: boolean }> = [
-    { label: 'Leads reçus',      stage: 'LEADS_RECEIVED',  order: 0,   enabled: true },
-    { label: 'Demandes d’appel', stage: 'CALL_REQUESTED',  order: 1,   enabled: true },
-    { label: 'Appels passés',    stage: 'CALL_ATTEMPT',    order: 2,   enabled: true },
-    { label: 'Appels répondus',  stage: 'CALL_ANSWERED',   order: 3,   enabled: true },
-    { label: 'No-show Setter',   stage: 'SETTER_NO_SHOW',  order: 4,   enabled: false },
-    { label: 'Follow Up',        stage: 'FOLLOW_UP',       order: 5,   enabled: true },
+  { label: 'Leads reçus',        stage: 'LEADS_RECEIVED',   order: 0,    enabled: true },
+  { label: 'Demandes d’appel',   stage: 'CALL_REQUESTED',   order: 1,    enabled: true },
+  { label: 'Appels passés',      stage: 'CALL_ATTEMPT',     order: 2,    enabled: true },
+  { label: 'Appels répondus',    stage: 'CALL_ANSWERED',    order: 3,    enabled: true },
+  { label: 'No-show Setter',     stage: 'SETTER_NO_SHOW',   order: 4,    enabled: false },
+  { label: 'Follow Up Setter',   stage: 'FOLLOW_UP',        order: 5,    enabled: true },
+  { label: 'Follow Up Closer',   stage: 'FOLLOW_UP_CLOSER', order: 5.5,  enabled: true },
 
-    { label: 'RV0 planifiés',    stage: 'RV0_PLANNED',     order: 10,  enabled: true },
-    { label: 'RV0 honorés',      stage: 'RV0_HONORED',     order: 11,  enabled: false },
-    { label: 'RV0 no-show',      stage: 'RV0_NO_SHOW',     order: 12,  enabled: false },
+  { label: 'RV0 planifiés',      stage: 'RV0_PLANNED',      order: 10,   enabled: true },
+  { label: 'RV0 honorés',        stage: 'RV0_HONORED',      order: 11,   enabled: false },
+  { label: 'RV0 no-show',        stage: 'RV0_NO_SHOW',      order: 12,   enabled: false },
+  { label: 'RV0 reportés',       stage: 'RV0_POSTPONED',    order: 12.2, enabled: false },
+  { label: 'RV0 annulés',        stage: 'RV0_CANCELED',     order: 12.5, enabled: false },
 
-    { label: 'RV1 planifiés',    stage: 'RV1_PLANNED',     order: 20,  enabled: true },
-    { label: 'RV1 honorés',      stage: 'RV1_HONORED',     order: 21,  enabled: true },
-    { label: 'RV1 no-show',      stage: 'RV1_NO_SHOW',     order: 22,  enabled: false },
-    { label: 'RV1 reportés',     stage: 'RV1_POSTPONED',   order: 23,  enabled: false },
+  { label: 'RV1 planifiés',      stage: 'RV1_PLANNED',      order: 20,   enabled: true },
+  { label: 'RV1 honorés',        stage: 'RV1_HONORED',      order: 21,   enabled: true },
+  { label: 'RV1 no-show',        stage: 'RV1_NO_SHOW',      order: 22,   enabled: false },
+  { label: 'RV1 reportés',       stage: 'RV1_POSTPONED',    order: 23,   enabled: false },
+  { label: 'RV1 annulés',        stage: 'RV1_CANCELED',     order: 23.5, enabled: true },
+  { label: 'RV1 non qualifiés',  stage: 'RV1_NOT_QUALIFIED',order: 23.7, enabled: false },
 
-    { label: 'RV0 annulés',      stage: 'RV0_CANCELED',    order: 12.5, enabled: false },
-    { label: 'RV1 annulés',      stage: 'RV1_CANCELED',    order: 23.5, enabled: true  },
-    { label: 'RV2 annulés',      stage: 'RV2_CANCELED',    order: 32.5, enabled: false },
+  { label: 'RV2 planifiés',      stage: 'RV2_PLANNED',      order: 30,   enabled: false },
+  { label: 'RV2 honorés',        stage: 'RV2_HONORED',      order: 31,   enabled: false },
+  { label: 'RV2 no-show',        stage: 'RV2_NO_SHOW',      order: 29,   enabled: false },
+  { label: 'RV2 reportés',       stage: 'RV2_POSTPONED',    order: 32,   enabled: false },
+  { label: 'RV2 annulés',        stage: 'RV2_CANCELED',     order: 32.5, enabled: false },
 
-    { label: 'RV2 planifiés',    stage: 'RV2_PLANNED',     order: 30,  enabled: false },
-    { label: 'RV2 honorés',      stage: 'RV2_HONORED',     order: 31,  enabled: false },
-    { label: 'RV2 no-show',      stage: 'RV2_NO_SHOW',     order: 29,  enabled: false },
-
-    { label: 'RV2 reportés',     stage: 'RV2_POSTPONED',   order: 32,  enabled: false },
-
-    { label: 'Non qualifiés',    stage: 'NOT_QUALIFIED',   order: 90,  enabled: true },
-    { label: 'Perdus',           stage: 'LOST',            order: 91,  enabled: true },
-    { label: 'Ventes (WON)',     stage: 'WON',             order: 99,  enabled: true },
-  ];
+  { label: 'RV0 non qualifiés',  stage: 'RV0_NOT_QUALIFIED',order: 80,   enabled: false },
+  { label: 'Non qualifiés',      stage: 'NOT_QUALIFIED',    order: 90,   enabled: true },
+  { label: 'Perdus',             stage: 'LOST',             order: 91,   enabled: true },
+  { label: 'Contrats signés',    stage: 'CONTRACT_SIGNED',  order: 95,   enabled: true },
+  { label: 'Ventes (WON)',       stage: 'WON',              order: 99,   enabled: true },
+];
 
   /** GET /prospects/columns-config */
   async getColumnsConfig() {
@@ -528,24 +550,34 @@ async putColumnsConfig(payload: Array<{
       'CALL_ANSWERED',
       'SETTER_NO_SHOW',
       'FOLLOW_UP',
+      'FOLLOW_UP_CLOSER',
+
       'RV0_PLANNED',
       'RV0_HONORED',
       'RV0_NO_SHOW',
+      'RV0_POSTPONED',
       'RV0_CANCELED',
+
       'RV1_PLANNED',
       'RV1_HONORED',
       'RV1_NO_SHOW',
-      'RV1_CANCELED',
       'RV1_POSTPONED',
+      'RV1_CANCELED',
+
       'RV2_PLANNED',
       'RV2_HONORED',
       'RV2_NO_SHOW',
       'RV2_POSTPONED',
       'RV2_CANCELED',
+
+      'RV0_NOT_QUALIFIED',
+      'RV1_NOT_QUALIFIED',
       'NOT_QUALIFIED',
       'LOST',
+      'CONTRACT_SIGNED',
       'WON',
     ];
+
 
     const columns: Record<LeadStage, ReturnType<typeof emptyCol>> = {} as any;
     for (const s of allStages) columns[s] = emptyCol();
@@ -965,7 +997,6 @@ async putColumnsConfig(payload: Array<{
                   meta: { source: 'importCsv' },
                 },
               });
-              
             } catch {}
 
             await this.stageEvents.recordStageEntry({
@@ -1057,34 +1088,43 @@ async putColumnsConfig(payload: Array<{
   }
 
   private safeStage(s: string | LeadStage): LeadStage {
-    const allowed: LeadStage[] = [
-      'LEADS_RECEIVED',
-      'CALL_REQUESTED',
-      'CALL_ATTEMPT',
-      'CALL_ANSWERED',
-      'SETTER_NO_SHOW',
-      'FOLLOW_UP',
-      'RV0_PLANNED',
-      'RV0_HONORED',
-      'RV0_NO_SHOW',
-      'RV1_PLANNED',
-      'RV1_HONORED',
-      'RV1_NO_SHOW',
-      'RV1_POSTPONED',
-      'RV2_PLANNED',
-      'RV2_HONORED',
-      'RV2_NO_SHOW',
-      'RV2_POSTPONED',
-      'NOT_QUALIFIED',
-      'LOST',
-      'RV0_CANCELED',
-      'RV1_CANCELED',
-      'RV2_CANCELED',
-      'WON',
-    ];
-    const up = String(s).toUpperCase();
-    return (allowed as string[]).includes(up) ? (up as LeadStage) : 'LEADS_RECEIVED';
-  }
+  const allowed: LeadStage[] = [
+    'LEADS_RECEIVED',
+    'CALL_REQUESTED',
+    'CALL_ATTEMPT',
+    'CALL_ANSWERED',
+    'SETTER_NO_SHOW',
+    'FOLLOW_UP',
+    'FOLLOW_UP_CLOSER',
+
+    'RV0_PLANNED',
+    'RV0_HONORED',
+    'RV0_NO_SHOW',
+    'RV0_POSTPONED',
+    'RV0_CANCELED',
+
+    'RV1_PLANNED',
+    'RV1_HONORED',
+    'RV1_NO_SHOW',
+    'RV1_POSTPONED',
+    'RV1_CANCELED',
+
+    'RV2_PLANNED',
+    'RV2_HONORED',
+    'RV2_NO_SHOW',
+    'RV2_POSTPONED',
+    'RV2_CANCELED',
+
+    'RV0_NOT_QUALIFIED',
+    'RV1_NOT_QUALIFIED',
+    'NOT_QUALIFIED',
+    'LOST',
+    'CONTRACT_SIGNED',
+    'WON',
+  ];
+  const up = String(s).toUpperCase();
+  return (allowed as string[]).includes(up) ? (up as LeadStage) : 'LEADS_RECEIVED';
+}
 
   /* ===================== CONFIG (CRUD simple) ===================== */
 
@@ -1252,4 +1292,3 @@ async putColumnsConfig(payload: Array<{
     });
   }
 }
-
