@@ -23,6 +23,15 @@ let ReportingController = class ReportingController {
     async getSummary(from, to, _tz) {
         return this.reporting.summary(from, to);
     }
+    async getBudgets() {
+        return this.reporting.listWeeklyBudgets();
+    }
+    async upsertBudget(body) {
+        const weekStartISO = body.weekStartISO;
+        const parsedAmount = Number(body.amount) || 0;
+        const budget = await this.reporting.upsertWeeklyBudget(weekStartISO, parsedAmount);
+        return { ok: true, budget };
+    }
     async getLeadsReceived(from, to, _tz) {
         return this.reporting.leadsReceived(from, to);
     }
@@ -126,6 +135,19 @@ __decorate([
     __metadata("design:paramtypes", [String, String, String]),
     __metadata("design:returntype", Promise)
 ], ReportingController.prototype, "getSummary", null);
+__decorate([
+    (0, common_1.Get)('reporting/budget'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], ReportingController.prototype, "getBudgets", null);
+__decorate([
+    (0, common_1.Post)('reporting/budget'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], ReportingController.prototype, "upsertBudget", null);
 __decorate([
     (0, common_1.Get)('reporting/leads-received'),
     __param(0, (0, common_1.Query)('from')),

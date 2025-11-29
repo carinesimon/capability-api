@@ -30,6 +30,12 @@ function toUTCDateOnly(s) {
     const [y, m, d] = s.split('-').map(Number);
     return new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
 }
+function isBusinessHour(dateUtc, tz) {
+    const localStr = dateUtc.toLocaleString("en-US", { timeZone: tz });
+    const local = new Date(localStr);
+    const h = local.getHours();
+    return h >= 8 && h < 21;
+}
 async function buildAdvancedPDF(params) {
     return await new Promise((resolve) => {
         const doc = new pdfkit_1.default({ size: 'A4', margin: 24 });
@@ -570,6 +576,64 @@ let ReportingService = class ReportingService {
         }
         return sum;
     }
+    async upsertWeeklyBudget(weekStartISO, amount) {
+        const weekStart = mondayOfUTC(new Date(weekStartISO));
+        return this.prisma.budget.upsert({
+            where: {
+                period_weekStart: {
+                    period: client_2.BudgetPeriod.WEEKLY,
+                    weekStart,
+                },
+            },
+            update: { amount },
+            create: {
+                period: client_2.BudgetPeriod.WEEKLY,
+                weekStart,
+                amount,
+            },
+        });
+    }
+    async listWeeklyBudgets() {
+        const rows = await this.prisma.budget.findMany({
+            where: { period: client_2.BudgetPeriod.WEEKLY },
+            orderBy: { weekStart: 'asc' },
+        });
+        return rows.map((b) => ({
+            id: b.id,
+            period: b.period,
+            amount: num(b.amount),
+            weekStart: b.weekStart ? b.weekStart.toISOString() : null,
+            monthStart: b.monthStart ? b.monthStart.toISOString() : null,
+            createdAt: b.createdAt.toISOString(),
+            updatedAt: b.updatedAt.toISOString(),
+        }));
+    }
+    async weeklyBudgets(from, to) {
+        const r = toRange(from, to);
+        const budgets = await this.prisma.budget.findMany({
+            where: { period: client_2.BudgetPeriod.WEEKLY },
+            orderBy: { weekStart: 'asc' },
+        });
+        const rows = [];
+        for (const b of budgets) {
+            if (!b.weekStart)
+                continue;
+            const ws = mondayOfUTC(new Date(b.weekStart));
+            const we = sundayOfUTC(new Date(b.weekStart));
+            if (r.from && r.to) {
+                const intersects = !(ws > r.to || we < r.from);
+                if (!intersects)
+                    continue;
+            }
+            rows.push({
+                weekStart: ws.toISOString(),
+                weekEnd: we.toISOString(),
+                amount: num(b.amount),
+            });
+        }
+        rows.sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+        return rows;
+    }
     async leadsReceived(from, to) {
         const r = toRange(from, to);
         const total = await this.prisma.lead.count({ where: between('createdAt', r) });
@@ -653,7 +717,7 @@ let ReportingService = class ReportingService {
         }
         return map;
     }
-    async ttfcBySetterViaStages(from, to) {
+    async ttfcBySetterViaStages(from, to, tz = 'Europe/Paris') {
         const r = toRange(from, to);
         if (!r.from || !r.to)
             return new Map();
@@ -666,6 +730,9 @@ let ReportingService = class ReportingService {
       WHERE se."toStage" = ${client_1.Prisma.sql `'CALL_REQUESTED'::"LeadStage"`}
         AND se."occurredAt" >= ${r.from}
         AND se."occurredAt" <= ${r.to}
+        -- 🔥 Filtre heures d'ouverture : 08h <= heure locale < 21h
+        AND EXTRACT(HOUR FROM (se."occurredAt" AT TIME ZONE ${tz})) >= 8
+        AND EXTRACT(HOUR FROM (se."occurredAt" AT TIME ZONE ${tz})) < 21
       ORDER BY se."leadId", se."occurredAt" ASC
     ),
     first_attempt AS (
@@ -685,12 +752,14 @@ let ReportingService = class ReportingService {
     FROM first_req fr
     JOIN first_attempt fa ON fa."leadId" = fr."leadId"
     JOIN "Lead" l ON l."id" = fr."leadId"
-    WHERE fa."attemptAt" >= fr."requestedAt" AND l."setterId" IS NOT NULL
+    WHERE fa."attemptAt" >= fr."requestedAt"
+      AND l."setterId" IS NOT NULL
     GROUP BY l."setterId"
   `);
         const map = new Map();
-        for (const r0 of rows)
+        for (const r0 of rows) {
             map.set(r0.setterId, { avg: Number(r0.avg), n: r0.n });
+        }
         return map;
     }
     async settersReport(from, to) {
@@ -711,9 +780,10 @@ let ReportingService = class ReportingService {
         for (const s of setters) {
             const leads = allLeads.filter((l) => l.setterId === s.id);
             const leadsReceived = leads.length;
-            const [rv1PlannedFromHisLeads, rv1CanceledFromHisLeads, rv1FromHisLeads] = await Promise.all([
+            const [rv1PlannedFromHisLeads, rv1CanceledFromHisLeads, rv1NoShowFromHisLeads, rv1FromHisLeads,] = await Promise.all([
                 this.countSE({ stages: [client_2.LeadStage.RV1_PLANNED], r, by: { setterId: s.id }, distinctByLead: true }),
                 this.countSE({ stages: [client_2.LeadStage.RV1_CANCELED], r, by: { setterId: s.id }, distinctByLead: true }),
+                this.countSE({ stages: [client_2.LeadStage.RV1_NO_SHOW], r, by: { setterId: s.id }, distinctByLead: true }),
                 this.countSE({ stages: [client_2.LeadStage.RV1_HONORED], r, by: { setterId: s.id }, distinctByLead: true }),
             ]);
             const rv0Count = await this.prisma.appointment.count({
@@ -752,9 +822,13 @@ let ReportingService = class ReportingService {
                 revenueFromHisLeads,
                 salesFromHisLeads: num(salesFromHisLeads),
                 spendShare: Number(spendShare.toFixed(2)),
-                cpl, cpRv0, cpRv1, roas,
+                cpl,
+                cpRv0,
+                cpRv1,
+                roas,
                 rv1PlannedFromHisLeads: num(rv1PlannedFromHisLeads),
                 rv1CanceledFromHisLeads: num(rv1CanceledFromHisLeads),
+                rv1NoShowFromHisLeads: num(rv1NoShowFromHisLeads),
             });
         }
         return rows;
@@ -787,41 +861,60 @@ let ReportingService = class ReportingService {
     }
     async canceledDaily(from, to, tz = 'Europe/Paris') {
         if (!from || !to) {
-            const total = await this.prisma.appointment.count({ where: { status: client_2.AppointmentStatus.CANCELED } });
-            return { total: num(total), byDay: [] };
+            const total = await this.prisma.stageEvent.count({
+                where: {
+                    toStage: {
+                        in: [
+                            'RV1_CANCELED',
+                            'RV1_POSTPONED',
+                            'RV2_CANCELED',
+                            'RV2_POSTPONED',
+                        ],
+                    },
+                },
+            });
+            return {
+                total: num(total),
+                byDay: [],
+            };
         }
+        const [rv1Canceled, rv1Postponed, rv2Canceled, rv2Postponed] = await Promise.all([
+            this.perDayFromStageEvents([client_2.LeadStage.RV1_CANCELED], from, to, tz),
+            this.perDayFromStageEvents(['RV1_POSTPONED'], from, to, tz),
+            this.perDayFromStageEvents([client_2.LeadStage.RV2_CANCELED], from, to, tz),
+            this.perDayFromStageEvents(['RV2_POSTPONED'], from, to, tz),
+        ]);
+        const map = new Map();
+        const addSeries = (src, key) => {
+            const arr = src?.byDay ?? [];
+            for (const row of arr) {
+                if (!row?.day)
+                    continue;
+                const dayKey = row.day.length >= 10
+                    ? row.day.slice(0, 10)
+                    : new Date(row.day).toISOString().slice(0, 10);
+                const bucket = map.get(dayKey) ?? { rv1: 0, rv2: 0 };
+                bucket[key] += num(row.count || 0);
+                map.set(dayKey, bucket);
+            }
+        };
+        addSeries(rv1Canceled, 'rv1');
+        addSeries(rv1Postponed, 'rv1');
+        addSeries(rv2Canceled, 'rv2');
+        addSeries(rv2Postponed, 'rv2');
         const byDay = [];
         for (const day of daysSpanLocal(from, to)) {
-            const daySql = client_1.Prisma.sql `${day}::date`;
-            const [rv0, rv1, rv2] = await Promise.all([
-                this.prisma.$queryRaw(client_1.Prisma.sql `
-        SELECT COUNT(*)::int AS n
-        FROM "Appointment"
-        WHERE "type" = 'RV0'
-          AND "status" = 'CANCELED'
-          AND (("scheduledAt" AT TIME ZONE ${tz})::date = ${daySql})
-      `),
-                this.prisma.$queryRaw(client_1.Prisma.sql `
-        SELECT COUNT(*)::int AS n
-        FROM "Appointment"
-        WHERE "type" = 'RV1'
-          AND "status" = 'CANCELED'
-          AND (("scheduledAt" AT TIME ZONE ${tz})::date = ${daySql})
-      `),
-                this.prisma.$queryRaw(client_1.Prisma.sql `
-        SELECT COUNT(*)::int AS n
-        FROM "Appointment"
-        WHERE "type" = 'RV2'
-          AND "status" = 'CANCELED'
-          AND (("scheduledAt" AT TIME ZONE ${tz})::date = ${daySql})
-      `),
-            ]);
-            const r0 = num(rv0?.[0]?.n ?? 0);
-            const r1 = num(rv1?.[0]?.n ?? 0);
-            const r2 = num(rv2?.[0]?.n ?? 0);
-            byDay.push({ day, RV0_CANCELED: r0, RV1_CANCELED: r1, RV2_CANCELED: r2, total: r0 + r1 + r2 });
+            const bucket = map.get(day) ?? { rv1: 0, rv2: 0 };
+            const rv1CanceledPostponed = num(bucket.rv1);
+            const rv2CanceledPostponed = num(bucket.rv2);
+            byDay.push({
+                day,
+                rv1CanceledPostponed,
+                rv2CanceledPostponed,
+                total: rv1CanceledPostponed + rv2CanceledPostponed,
+            });
         }
-        const total = byDay.reduce((s, x) => s + num(x.total), 0);
+        const total = byDay.reduce((s, r) => s + num(r.total), 0);
         return { total, byDay };
     }
     async closersReport(from, to) {
@@ -834,15 +927,19 @@ let ReportingService = class ReportingService {
         const spend = await this.sumSpend(r);
         const rows = [];
         for (const c of closers) {
-            const [rv1Planned, rv1HonoredCount, rv1NoShow, rv1Canceled, rv2Planned, rv2Honored, rv2Canceled,] = await Promise.all([
+            const [rv1Planned, rv1HonoredCount, rv1NoShow, rv1Canceled, rv1Postponed, rv1NotQualified, rv2Planned, rv2Honored, rv2NoShow, rv2Canceled, rv2Postponed, contractsSigned,] = await Promise.all([
                 this.countSE({ stages: [client_2.LeadStage.RV1_PLANNED], r, by: { closerId: c.id } }),
                 this.countSE({ stages: [client_2.LeadStage.RV1_HONORED], r, by: { closerId: c.id } }),
                 this.countSE({ stages: [client_2.LeadStage.RV1_NO_SHOW], r, by: { closerId: c.id } }),
                 this.countSE({ stages: [client_2.LeadStage.RV1_CANCELED], r, by: { closerId: c.id } }),
+                this.countSE({ stages: [client_2.LeadStage.RV1_POSTPONED], r, by: { closerId: c.id } }),
+                this.countSE({ stages: [client_2.LeadStage.RV1_NOT_QUALIFIED], r, by: { closerId: c.id } }),
                 this.countSE({ stages: [client_2.LeadStage.RV2_PLANNED], r, by: { closerId: c.id } }),
                 this.countSE({ stages: [client_2.LeadStage.RV2_HONORED], r, by: { closerId: c.id } }),
                 this.countSE({ stages: [client_2.LeadStage.RV2_NO_SHOW], r, by: { closerId: c.id } }),
                 this.countSE({ stages: [client_2.LeadStage.RV2_CANCELED], r, by: { closerId: c.id } }),
+                this.countSE({ stages: [client_2.LeadStage.RV2_POSTPONED], r, by: { closerId: c.id } }),
+                this.countSE({ stages: [client_2.LeadStage.CONTRACT_SIGNED], r, by: { closerId: c.id } }),
             ]);
             const wonWhere = await this.wonFilter(r);
             wonWhere.closerId = c.id;
@@ -860,6 +957,8 @@ let ReportingService = class ReportingService {
                 : null;
             const rv1CancelRate = rv1Planned ? Number((rv1Canceled / rv1Planned).toFixed(4)) : null;
             const rv2CancelRate = rv2Planned ? Number((rv2Canceled / rv2Planned).toFixed(4)) : null;
+            const rv1NoShowRate = rv1Planned ? Number((rv1NoShow / rv1Planned).toFixed(4)) : null;
+            const rv2NoShowRate = rv2Planned ? Number((rv2NoShow / rv2Planned).toFixed(4)) : null;
             rows.push({
                 userId: c.id,
                 name: c.firstName,
@@ -867,16 +966,23 @@ let ReportingService = class ReportingService {
                 rv1Planned: num(rv1Planned),
                 rv1Honored: num(rv1HonoredCount),
                 rv1NoShow: num(rv1NoShow),
+                rv1Canceled: num(rv1Canceled),
+                rv1Postponed: num(rv1Postponed),
+                rv1NotQualified: num(rv1NotQualified),
                 rv2Planned: num(rv2Planned),
                 rv2Honored: num(rv2Honored),
+                rv2NoShow: num(rv2NoShow),
+                rv2Canceled: num(rv2Canceled),
+                rv2Postponed: num(rv2Postponed),
+                contractsSigned: num(contractsSigned),
                 salesClosed: num(salesClosed),
                 revenueTotal,
                 roasPlanned,
                 roasHonored,
-                rv1Canceled: num(rv1Canceled),
-                rv2Canceled: num(rv2Canceled),
                 rv1CancelRate,
+                rv1NoShowRate,
                 rv2CancelRate,
+                rv2NoShowRate,
             });
         }
         rows.sort((a, b) => b.revenueTotal - a.revenueTotal ||
@@ -886,8 +992,15 @@ let ReportingService = class ReportingService {
     async spotlightSetters(from, to) {
         const base = await this.settersReport(from, to);
         const rows = base.map((r) => {
-            const rv1CancelRate = r.rv1PlannedFromHisLeads ? Number((r.rv1CanceledFromHisLeads / r.rv1PlannedFromHisLeads).toFixed(4)) : null;
-            const settingRate = r.leadsReceived ? Number((r.rv1PlannedFromHisLeads / r.leadsReceived).toFixed(4)) : null;
+            const rv1CancelRate = r.rv1PlannedFromHisLeads
+                ? Number((r.rv1CanceledFromHisLeads / r.rv1PlannedFromHisLeads).toFixed(4))
+                : null;
+            const rv1NoShowRate = r.rv1PlannedFromHisLeads
+                ? Number((r.rv1NoShowFromHisLeads / r.rv1PlannedFromHisLeads).toFixed(4))
+                : null;
+            const settingRate = r.leadsReceived
+                ? Number((r.rv1PlannedFromHisLeads / r.leadsReceived).toFixed(4))
+                : null;
             return {
                 userId: r.userId,
                 name: r.name,
@@ -895,7 +1008,9 @@ let ReportingService = class ReportingService {
                 rv1PlannedOnHisLeads: r.rv1PlannedFromHisLeads,
                 rv1DoneOnHisLeads: r.rv1FromHisLeads,
                 rv1CanceledOnHisLeads: r.rv1CanceledFromHisLeads,
+                rv1NoShowOnHisLeads: r.rv1NoShowFromHisLeads,
                 rv1CancelRate,
+                rv1NoShowRate,
                 salesFromHisLeads: r.salesFromHisLeads,
                 revenueFromHisLeads: r.revenueFromHisLeads,
                 settingRate,
@@ -917,11 +1032,20 @@ let ReportingService = class ReportingService {
                 email: r.email,
                 rv1Planned: r.rv1Planned,
                 rv1Honored: r.rv1Honored,
+                rv1NoShow: r.rv1NoShow,
                 rv1Canceled: r.rv1Canceled,
+                rv1Postponed: r.rv1Postponed,
+                rv1NotQualified: r.rv1NotQualified,
                 rv1CancelRate: r.rv1CancelRate,
+                rv1NoShowRate: r.rv1NoShowRate ?? null,
                 rv2Planned: r.rv2Planned,
+                rv2Honored: r.rv2Honored,
+                rv2NoShow: r.rv2NoShow,
                 rv2Canceled: r.rv2Canceled,
+                rv2Postponed: r.rv2Postponed,
                 rv2CancelRate: r.rv2CancelRate,
+                rv2NoShowRate: r.rv2NoShowRate ?? null,
+                contractsSigned: r.contractsSigned,
                 salesClosed: r.salesClosed,
                 revenueTotal: r.revenueTotal,
                 closingRate,
@@ -1080,16 +1204,32 @@ let ReportingService = class ReportingService {
     }
     async funnelFromStages(r) {
         const get = (keys) => this.countEnteredInStages(keys, r);
-        const [leadsCreated, callReq, calls, answered, setterNoShow, rv0P, rv0H, rv0NS, rv0C, rv1P, rv1H, rv1NS, rv1C, rv2P, rv2H, rv2NS, rv2C, notQual, lost, wonCount, appointmentCanceled,] = await Promise.all([
+        const [leadsCreated, callReq, calls, answered, setterNoShow, rv0P, rv0H, rv0NS, rv0C, rv0NotQ, rv1P, rv1H, rv1NS, rv1C, rv1NotQ, rv1Post, rv2P, rv2H, rv2NS, rv2C, rv2Post, followUpSetter, followUpCloser, notQual, lost, wonCount, appointmentCanceled,] = await Promise.all([
             this.prisma.lead.count({ where: between('createdAt', r) }),
             get(['CALL_REQUESTED']),
             get(['CALL_ATTEMPT']),
             get(['CALL_ANSWERED']),
             get(['SETTER_NO_SHOW']),
-            get(['RV0_PLANNED']), get(['RV0_HONORED']), get(['RV0_NO_SHOW']), get(['RV0_CANCELED']),
-            get(['RV1_PLANNED']), get(['RV1_HONORED']), get(['RV1_NO_SHOW']), get(['RV1_CANCELED']),
-            get(['RV2_PLANNED']), get(['RV2_HONORED']), get(['RV2_NO_SHOW']), get(['RV2_CANCELED']),
-            get(['NOT_QUALIFIED']), get(['LOST']),
+            get(['RV0_PLANNED']),
+            get(['RV0_HONORED']),
+            get(['RV0_NO_SHOW']),
+            get(['RV0_CANCELED']),
+            get(['RV0_NOT_QUALIFIED']),
+            get(['RV1_PLANNED']),
+            get(['RV1_HONORED']),
+            get(['RV1_NO_SHOW']),
+            get(['RV1_CANCELED']),
+            get(['RV1_NOT_QUALIFIED']),
+            get(['RV1_POSTPONED']),
+            get(['RV2_PLANNED']),
+            get(['RV2_HONORED']),
+            get(['RV2_NO_SHOW']),
+            get(['RV2_CANCELED']),
+            get(['RV2_POSTPONED']),
+            get(['FOLLOW_UP']),
+            get(['FOLLOW_UP_CLOSER']),
+            get(['NOT_QUALIFIED']),
+            get(['LOST']),
             (async () => {
                 const where = await this.wonFilter(r);
                 return this.prisma.lead.count({ where });
@@ -1112,10 +1252,16 @@ let ReportingService = class ReportingService {
             rv1Honored: num(rv1H),
             rv1NoShow: num(rv1NS),
             rv1Canceled: num(rv1C),
+            rv1Postponed: num(rv1Post),
             rv2Planned: num(rv2P),
             rv2Honored: num(rv2H),
             rv2NoShow: num(rv2NS),
             rv2Canceled: num(rv2C),
+            rv2Postponed: num(rv2Post),
+            rv0NotQualified: num(rv0NotQ),
+            rv1NotQualified: num(rv1NotQ),
+            followUpSetter: num(followUpSetter),
+            followUpCloser: num(followUpCloser),
             notQualified: num(notQual),
             lost: num(lost),
             wonCount: num(wonCount),

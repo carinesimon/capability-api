@@ -73,8 +73,8 @@ export declare class IntegrationsService {
     }>;
     listEvents(automationId: string, limit: number): Promise<{
         error: string | null;
-        id: string;
         result: Prisma.JsonValue;
+        id: string;
         status: string;
         receivedAt: Date;
         payload: Prisma.JsonValue;

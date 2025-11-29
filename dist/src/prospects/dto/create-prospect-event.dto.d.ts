@@ -26,5 +26,4 @@ export declare class CreateProspectEventDto {
     status?: string;
     occurredAt?: string;
 }
-
 export declare function normalizeStage(input?: string): StageDto | undefined;

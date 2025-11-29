@@ -32,13 +32,13 @@ export declare class GhlService {
         saleValue?: number | null;
         eventId?: string | null;
     }): Promise<{
+        stage: import("@prisma/client").$Enums.LeadStage;
         id: string;
-        email: string | null;
         firstName: string;
         lastName: string | null;
+        email: string | null;
         createdAt: Date;
         updatedAt: Date;
-        stage: import("@prisma/client").$Enums.LeadStage;
         ghlContactId: string | null;
         phone: string | null;
         tag: string | null;

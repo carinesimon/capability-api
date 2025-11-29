@@ -2,7 +2,7 @@ import { CreateProspectEventDto } from './dto/create-prospect-event.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { LeadStage } from '@prisma/client';
 import { StageEventsService } from '../modules/leads/stage-events.service';
-export type PipelineMetricKey = 'LEADS_RECEIVED' | 'CALL_REQUESTED' | 'CALL_ATTEMPT' | 'CALL_ANSWERED' | 'SETTER_NO_SHOW' | 'FOLLOW_UP' | 'RV0_PLANNED' | 'RV0_HONORED' | 'RV0_NO_SHOW' | 'RV0_CANCELED' | 'RV1_PLANNED' | 'RV1_HONORED' | 'RV1_NO_SHOW' | 'RV1_POSTPONED' | 'RV1_CANCELED' | 'RV2_PLANNED' | 'RV2_HONORED' | 'RV2_NO_SHOW' | 'RV2_POSTPONED' | 'RV2_CANCELED' | 'NOT_QUALIFIED' | 'LOST' | 'WON' | 'APPOINTMENT_CANCELED';
+export type PipelineMetricKey = 'LEADS_RECEIVED' | 'CALL_REQUESTED' | 'CALL_ATTEMPT' | 'CALL_ANSWERED' | 'SETTER_NO_SHOW' | 'FOLLOW_UP' | 'FOLLOW_UP_CLOSER' | 'RV0_PLANNED' | 'RV0_HONORED' | 'RV0_NO_SHOW' | 'RV0_POSTPONED' | 'RV0_CANCELED' | 'RV1_PLANNED' | 'RV1_HONORED' | 'RV1_NO_SHOW' | 'RV1_POSTPONED' | 'RV1_CANCELED' | 'RV2_PLANNED' | 'RV2_HONORED' | 'RV2_NO_SHOW' | 'RV2_POSTPONED' | 'RV2_CANCELED' | 'RV0_NOT_QUALIFIED' | 'RV1_NOT_QUALIFIED' | 'NOT_QUALIFIED' | 'LOST' | 'CONTRACT_SIGNED' | 'WON' | 'APPOINTMENT_CANCELED';
 type OpsColumn = {
     key: PipelineMetricKey;
     label: string;
@@ -73,13 +73,13 @@ export declare class ProspectsService {
     getColumnsConfig(): Promise<{
         ok: boolean;
         columns: {
+            stage: import("@prisma/client").$Enums.LeadStage | null;
+            id: string;
+            createdAt: Date;
+            updatedAt: Date;
             label: string;
             order: number;
             enabled: boolean;
-            id: string;
-            stage: import("@prisma/client").$Enums.LeadStage | null;
-            createdAt: Date;
-            updatedAt: Date;
         }[];
     }>;
     putColumnsConfig(payload: Array<{
@@ -91,13 +91,13 @@ export declare class ProspectsService {
     }>): Promise<{
         ok: boolean;
         columns: {
+            stage: import("@prisma/client").$Enums.LeadStage | null;
+            id: string;
+            createdAt: Date;
+            updatedAt: Date;
             label: string;
             order: number;
             enabled: boolean;
-            id: string;
-            stage: import("@prisma/client").$Enums.LeadStage | null;
-            createdAt: Date;
-            updatedAt: Date;
         }[];
     }>;
     private buildRangeOr;
@@ -118,13 +118,14 @@ export declare class ProspectsService {
                     email: string;
                 } | null;
             } & {
-                id: string;
                 stage: import("@prisma/client").$Enums.LeadStage;
-                createdAt: Date;
-                updatedAt: Date;
+                id: string;
                 firstName: string;
                 lastName: string | null;
                 email: string | null;
+                createdAt: Date;
+                updatedAt: Date;
+                ghlContactId: string | null;
                 phone: string | null;
                 tag: string | null;
                 source: string | null;
@@ -135,7 +136,6 @@ export declare class ProspectsService {
                 saleValue: number | null;
                 setterId: string | null;
                 closerId: string | null;
-                ghlContactId: string | null;
             })[];
         }>;
         extraByColumnKey: Record<string, ({
@@ -150,13 +150,14 @@ export declare class ProspectsService {
                 email: string;
             } | null;
         } & {
-            id: string;
             stage: import("@prisma/client").$Enums.LeadStage;
-            createdAt: Date;
-            updatedAt: Date;
+            id: string;
             firstName: string;
             lastName: string | null;
             email: string | null;
+            createdAt: Date;
+            updatedAt: Date;
+            ghlContactId: string | null;
             phone: string | null;
             tag: string | null;
             source: string | null;
@@ -167,7 +168,6 @@ export declare class ProspectsService {
             saleValue: number | null;
             setterId: string | null;
             closerId: string | null;
-            ghlContactId: string | null;
         })[]>;
     }>;
     private ensureNonNegative;
@@ -185,13 +185,14 @@ export declare class ProspectsService {
                 email: string;
             } | null;
         } & {
-            id: string;
             stage: import("@prisma/client").$Enums.LeadStage;
-            createdAt: Date;
-            updatedAt: Date;
+            id: string;
             firstName: string;
             lastName: string | null;
             email: string | null;
+            createdAt: Date;
+            updatedAt: Date;
+            ghlContactId: string | null;
             phone: string | null;
             tag: string | null;
             source: string | null;
@@ -202,7 +203,6 @@ export declare class ProspectsService {
             saleValue: number | null;
             setterId: string | null;
             closerId: string | null;
-            ghlContactId: string | null;
         };
     }>;
     getOne(id: string): Promise<{
@@ -217,13 +217,14 @@ export declare class ProspectsService {
             email: string;
         } | null;
     } & {
-        id: string;
         stage: import("@prisma/client").$Enums.LeadStage;
-        createdAt: Date;
-        updatedAt: Date;
+        id: string;
         firstName: string;
         lastName: string | null;
         email: string | null;
+        createdAt: Date;
+        updatedAt: Date;
+        ghlContactId: string | null;
         phone: string | null;
         tag: string | null;
         source: string | null;
@@ -234,7 +235,6 @@ export declare class ProspectsService {
         saleValue: number | null;
         setterId: string | null;
         closerId: string | null;
-        ghlContactId: string | null;
     }>;
     updateOne(id: string, body: EditLeadBody): Promise<{
         ok: boolean;
@@ -250,13 +250,14 @@ export declare class ProspectsService {
                 email: string;
             } | null;
         } & {
-            id: string;
             stage: import("@prisma/client").$Enums.LeadStage;
-            createdAt: Date;
-            updatedAt: Date;
+            id: string;
             firstName: string;
             lastName: string | null;
             email: string | null;
+            createdAt: Date;
+            updatedAt: Date;
+            ghlContactId: string | null;
             phone: string | null;
             tag: string | null;
             source: string | null;
@@ -267,19 +268,19 @@ export declare class ProspectsService {
             saleValue: number | null;
             setterId: string | null;
             closerId: string | null;
-            ghlContactId: string | null;
         };
     }>;
     createLead(body: CreateLeadBody): Promise<{
         ok: boolean;
         lead: {
-            id: string;
             stage: import("@prisma/client").$Enums.LeadStage;
-            createdAt: Date;
-            updatedAt: Date;
+            id: string;
             firstName: string;
             lastName: string | null;
             email: string | null;
+            createdAt: Date;
+            updatedAt: Date;
+            ghlContactId: string | null;
             phone: string | null;
             tag: string | null;
             source: string | null;
@@ -290,7 +291,6 @@ export declare class ProspectsService {
             saleValue: number | null;
             setterId: string | null;
             closerId: string | null;
-            ghlContactId: string | null;
         };
     }>;
     listActors(): Promise<{
@@ -318,14 +318,14 @@ export declare class ProspectsService {
     getMetricsConfig(): Promise<{
         ok: boolean;
         metrics: {
-            key: string;
-            label: string;
-            sourcePath: string;
-            order: number;
-            enabled: boolean;
             id: string;
             createdAt: Date;
             updatedAt: Date;
+            label: string;
+            order: number;
+            key: string;
+            sourcePath: string;
+            enabled: boolean;
         }[];
     }>;
     putMetricsConfig(payload: Array<{
@@ -337,40 +337,41 @@ export declare class ProspectsService {
     }>): Promise<{
         ok: boolean;
         metrics: {
-            key: string;
-            label: string;
-            sourcePath: string;
-            order: number;
-            enabled: boolean;
             id: string;
             createdAt: Date;
             updatedAt: Date;
+            label: string;
+            order: number;
+            key: string;
+            sourcePath: string;
+            enabled: boolean;
         }[];
     }>;
     resetMetricsConfig(): Promise<{
         ok: boolean;
         metrics: {
-            key: string;
-            label: string;
-            sourcePath: string;
-            order: number;
-            enabled: boolean;
             id: string;
             createdAt: Date;
             updatedAt: Date;
+            label: string;
+            order: number;
+            key: string;
+            sourcePath: string;
+            enabled: boolean;
         }[];
     }>;
     addEvent(leadId: string, dto: CreateProspectEventDto): Promise<{
         ok: boolean;
     }>;
     updateBoardColumn(id: string, columnKey: string | null): Promise<{
-        id: string;
         stage: import("@prisma/client").$Enums.LeadStage;
-        createdAt: Date;
-        updatedAt: Date;
+        id: string;
         firstName: string;
         lastName: string | null;
         email: string | null;
+        createdAt: Date;
+        updatedAt: Date;
+        ghlContactId: string | null;
         phone: string | null;
         tag: string | null;
         source: string | null;
@@ -381,7 +382,6 @@ export declare class ProspectsService {
         saleValue: number | null;
         setterId: string | null;
         closerId: string | null;
-        ghlContactId: string | null;
     }>;
 }
 export {};

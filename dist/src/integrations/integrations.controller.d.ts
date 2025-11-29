@@ -12,7 +12,7 @@ export declare class IntegrationsController {
         routeKey: string;
     }[]>;
     getLeadStages(): {
-        stages: ("LEADS_RECEIVED" | "CALL_REQUESTED" | "CALL_ATTEMPT" | "CALL_ANSWERED" | "SETTER_NO_SHOW" | "FOLLOW_UP" | "RV0_PLANNED" | "RV0_HONORED" | "RV0_NO_SHOW" | "RV0_CANCELED" | "RV1_PLANNED" | "RV1_HONORED" | "RV1_NO_SHOW" | "RV1_POSTPONED" | "RV1_CANCELED" | "RV2_PLANNED" | "RV2_HONORED" | "RV2_NO_SHOW" | "RV2_POSTPONED" | "RV2_CANCELED" | "NOT_QUALIFIED" | "LOST" | "WON")[];
+        stages: ("LEADS_RECEIVED" | "CALL_REQUESTED" | "CALL_ATTEMPT" | "CALL_ANSWERED" | "SETTER_NO_SHOW" | "FOLLOW_UP" | "FOLLOW_UP_CLOSER" | "RV0_PLANNED" | "RV0_HONORED" | "RV0_NO_SHOW" | "RV0_POSTPONED" | "RV0_CANCELED" | "RV1_PLANNED" | "RV1_HONORED" | "RV1_NO_SHOW" | "RV1_POSTPONED" | "RV1_CANCELED" | "RV2_PLANNED" | "RV2_HONORED" | "RV2_NO_SHOW" | "RV2_POSTPONED" | "RV2_CANCELED" | "RV0_NOT_QUALIFIED" | "RV1_NOT_QUALIFIED" | "NOT_QUALIFIED" | "LOST" | "CONTRACT_SIGNED" | "WON")[];
     };
     create(body: {
         name: string;
@@ -25,7 +25,7 @@ export declare class IntegrationsController {
         updatedAt: Date;
     }>;
     get(id: string): Promise<{
-        leadStages: ("LEADS_RECEIVED" | "CALL_REQUESTED" | "CALL_ATTEMPT" | "CALL_ANSWERED" | "SETTER_NO_SHOW" | "FOLLOW_UP" | "RV0_PLANNED" | "RV0_HONORED" | "RV0_NO_SHOW" | "RV0_CANCELED" | "RV1_PLANNED" | "RV1_HONORED" | "RV1_NO_SHOW" | "RV1_POSTPONED" | "RV1_CANCELED" | "RV2_PLANNED" | "RV2_HONORED" | "RV2_NO_SHOW" | "RV2_POSTPONED" | "RV2_CANCELED" | "NOT_QUALIFIED" | "LOST" | "WON")[];
+        leadStages: ("LEADS_RECEIVED" | "CALL_REQUESTED" | "CALL_ATTEMPT" | "CALL_ANSWERED" | "SETTER_NO_SHOW" | "FOLLOW_UP" | "FOLLOW_UP_CLOSER" | "RV0_PLANNED" | "RV0_HONORED" | "RV0_NO_SHOW" | "RV0_POSTPONED" | "RV0_CANCELED" | "RV1_PLANNED" | "RV1_HONORED" | "RV1_NO_SHOW" | "RV1_POSTPONED" | "RV1_CANCELED" | "RV2_PLANNED" | "RV2_HONORED" | "RV2_NO_SHOW" | "RV2_POSTPONED" | "RV2_CANCELED" | "RV0_NOT_QUALIFIED" | "RV1_NOT_QUALIFIED" | "NOT_QUALIFIED" | "LOST" | "CONTRACT_SIGNED" | "WON")[];
         id: string;
         name: string;
         status: import("@prisma/client").$Enums.AutomationStatus;
@@ -58,8 +58,8 @@ export declare class IntegrationsController {
     }>;
     events(id: string, limit?: string): Promise<{
         error: string | null;
-        id: string;
         result: import("@prisma/client/runtime/library").JsonValue;
+        id: string;
         status: string;
         receivedAt: Date;
         payload: import("@prisma/client/runtime/library").JsonValue;
