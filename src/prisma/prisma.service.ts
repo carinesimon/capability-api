@@ -16,13 +16,6 @@ export class PrismaService
           : ['query', 'info', 'warn', 'error'],
     });
 
-    // ⚠️ Si vous aviez des middlewares Prisma, vous pouvez les remettre ici.
-    // Exemple (laissez commenté si vous n’en avez pas besoin) :
-    // this.$use(async (params, next) => {
-    //   return next(params);
-    // });
-  }
-
   async onModuleInit() {
     await this.$connect();
   }
@@ -31,3 +24,4 @@ export class PrismaService
     await this.$disconnect();
   }
 }
+
