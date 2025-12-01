@@ -9,7 +9,6 @@ import {
   LeadStage,
   CallOutcome,
 } from '@prisma/client';
-
 import PDFKit from 'pdfkit';
 import { Parser as Json2Csv } from 'json2csv';
 
@@ -18,6 +17,14 @@ type RangeTz = { from?: string; to?: string; tz: string };
 const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 type RangeArgs = { from?: string; to?: string };
 
+// "email,meta ads,google" -> ["email","meta ads","google"]
+function parseSourcesParam(s?: string): string[] {
+  if (!s) return [];
+  return s
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
 
 /* ---------------- Dates helpers (UTC) ---------------- */
 function toUTCDateOnly(s?: string) {
@@ -463,6 +470,7 @@ type SummaryOut = {
 type WeeklyOpsRow = {
   weekStart: string;
   weekEnd: string;
+  callRequests: number;
   rv0Planned: number;
   rv0Honored: number;
   rv0NoShow?: number;
@@ -1045,12 +1053,40 @@ async exportSpotlightClosersPDF({ from, to }: { from?: string; to?: string }): P
     return rows;
   }
 
+  /** Liste toutes les sources d'opportunités (Lead.source) présentes en base. */
+  async listLeadSources(): Promise<string[]> {
+    const rows = await this.prisma.lead.findMany({
+      where: { source: { not: null } as any },       // adapte le champ si ce n'est pas "source"
+      distinct: ['source'],
+      select: { source: true },
+    });
+
+    return rows
+      .map((r: any) => r.source as string)
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+  }
+
 
   /* ---------------- Leads reçus (créations) ---------------- */
-  async leadsReceived(from?: string, to?: string): Promise<LeadsReceivedOut> {
+    /* ---------------- Leads reçus (créations) ---------------- */
+  async leadsReceived(
+    from?: string,
+    to?: string,
+    sourcesCsv?: string,
+  ): Promise<LeadsReceivedOut> {
     const r = toRange(from, to);
-    const total = await this.prisma.lead.count({ where: between('createdAt', r) });
+    const sourceList = parseSourcesParam(sourcesCsv);
+    const sourceFilter = sourceList.length
+      ? { source: { in: sourceList } as any }
+      : {};
 
+    const total = await this.prisma.lead.count({
+      where: {
+        ...between('createdAt', r),
+        ...sourceFilter,
+      },
+    });
 
     const days: Array<{ day: string; count: number }> = [];
     if (r.from && r.to) {
@@ -1062,7 +1098,10 @@ async exportSpotlightClosersPDF({ from, to }: { from?: string; to?: string }): P
         const d1 = new Date(d);
         d1.setUTCHours(23, 59, 59, 999);
         const count = await this.prisma.lead.count({
-          where: { createdAt: { gte: d0, lte: d1 } },
+          where: {
+            createdAt: { gte: d0, lte: d1 },
+            ...sourceFilter,
+          },
         });
         days.push({ day: d0.toISOString(), count: num(count) });
       }
@@ -1070,17 +1109,26 @@ async exportSpotlightClosersPDF({ from, to }: { from?: string; to?: string }): P
     return { total: num(total), byDay: days.length ? days : undefined };
   }
 
-
   /* ---------------- Ventes (WON) + hebdo ---------------- */
-  async salesWeekly(from?: string, to?: string): Promise<SalesWeeklyItem[]> {
+  async salesWeekly(
+    from?: string,
+    to?: string,
+    sourcesCsv?: string,
+  ): Promise<SalesWeeklyItem[]> {
     const r = toRange(from, to);
+    const sourceList = parseSourcesParam(sourcesCsv);
+
     const start = mondayOfUTC(r.from ?? new Date());
     const end = sundayOfUTC(r.to ?? new Date());
     const out: SalesWeeklyItem[] = [];
+
     for (let w = new Date(start); w <= end; w.setUTCDate(w.getUTCDate() + 7)) {
       const ws = mondayOfUTC(w);
       const we = sundayOfUTC(w);
       const where = await this.wonFilter({ from: ws, to: we });
+      if (sourceList.length) {
+        (where as any).source = { in: sourceList };
+      }
       const agg = await this.prisma.lead.aggregate({
         _sum: { saleValue: true },
         _count: { _all: true },
@@ -1802,26 +1850,36 @@ async spotlightSetters(from?: string, to?: string): Promise<SpotlightSetterRow[]
 
 
   /* ---------------- Résumé ---------------- */
-  async summary(from?: string, to?: string): Promise<SummaryOut> {
+  async summary(
+    from?: string,
+    to?: string,
+    sourcesCsv?: string,
+  ): Promise<SummaryOut> {
     const r = toRange(from, to);
+    const sourceList = parseSourcesParam(sourcesCsv);
+
     const [leads, wonAgg, setters, closers] = await Promise.all([
-      this.leadsReceived(from, to),
+      this.leadsReceived(from, to, sourcesCsv),
       (async () => {
         const where = await this.wonFilter(r);
+        if (sourceList.length) {
+          (where as any).source = { in: sourceList };
+        }
         const agg = await this.prisma.lead.aggregate({
           _sum: { saleValue: true },
           _count: { _all: true },
           where,
         });
-        return { revenue: num(agg._sum.saleValue ?? 0), count: num(agg._count._all ?? 0) };
+        return {
+          revenue: num(agg._sum.saleValue ?? 0),
+          count: num(agg._count._all ?? 0),
+        };
       })(),
-      this.settersReport(from, to),
+      this.settersReport(from, to), // pas filtrés par source pour l'instant
       this.closersReport(from, to),
     ]);
 
-
     const spend = await this.sumSpend(r);
-
 
     return {
       period: { from, to },
@@ -1833,7 +1891,10 @@ async spotlightSetters(from?: string, to?: string): Promise<SpotlightSetterRow[]
         roas: spend ? Number((wonAgg.revenue / spend).toFixed(2)) : null,
         settersCount: (setters as any).length,
         closersCount: (closers as any).length,
-        rv1Honored: (closers as any).reduce((s: number, r0: any) => s + num(r0.rv1Honored || 0), 0),
+        rv1Honored: (closers as any).reduce(
+          (s: number, r0: any) => s + num(r0.rv1Honored || 0),
+          0,
+        ),
       },
     };
   }
@@ -1856,27 +1917,51 @@ async spotlightSetters(from?: string, to?: string): Promise<SpotlightSetterRow[]
 
 
   /** Compte les leads qui ont ENTRÉ dans l’un des stages `keys` pendant [from;to] (via stageUpdatedAt). */
-  private async countEnteredInStages(keys: string[], r: Range): Promise<number> {
+    /** Compte les leads qui ont ENTRÉ dans l’un des stages `keys` pendant [from;to] (via stageUpdatedAt). */
+  private async countEnteredInStages(
+    keys: string[],
+    r: Range,
+    sources?: string[],
+  ): Promise<number> {
     if (!keys?.length) return 0;
     const ids = await this.stageIdsForKeys(keys);
     const where: any = {
       AND: [
-        { OR: [{ stage: { in: keys as any } }, ...(ids.length ? [{ stageId: { in: ids } }] : [])] },
+        {
+          OR: [
+            { stage: { in: keys as any } },
+            ...(ids.length ? [{ stageId: { in: ids } }] : []),
+          ],
+        },
         between('stageUpdatedAt', r),
       ],
     };
+
+    if (sources?.length) {
+      (where as any).source = { in: sources };
+    }
+
     return num(await this.prisma.lead.count({ where }));
   }
-
 
   /** Compte les leads ACTUELLEMENT dans l’un des stages `keys` (peu importe stageUpdatedAt). */
-  private async countCurrentInStages(keys: string[]): Promise<number> {
+  private async countCurrentInStages(
+    keys: string[],
+    sources?: string[],
+  ): Promise<number> {
     if (!keys?.length) return 0;
     const ids = await this.stageIdsForKeys(keys);
-    const where: any = { OR: [{ stage: { in: keys as any } }, ...(ids.length ? [{ stageId: { in: ids } }] : [])] };
+    const where: any = {
+      OR: [
+        { stage: { in: keys as any } },
+        ...(ids.length ? [{ stageId: { in: ids } }] : []),
+      ],
+    };
+    if (sources?.length) {
+      (where as any).source = { in: sources };
+    }
     return num(await this.prisma.lead.count({ where }));
   }
-
   
 
   /* ----------- Batch métriques pipeline pour le front (funnel cartes) ----------- */
@@ -1905,76 +1990,93 @@ async spotlightSetters(from?: string, to?: string): Promise<SpotlightSetterRow[]
 
 
   /* ---------------- Funnel (TOUT via stages, comme Leads/WON) ---------------- */
-  private async funnelFromStages(r: Range): Promise<FunnelTotals> {
-    const get = (keys: string[]) => this.countEnteredInStages(keys, r);
+  private async funnelFromStages(
+    r: Range,
+    sources?: string[],
+  ): Promise<FunnelTotals> {
+    const get = (keys: string[]) => this.countEnteredInStages(keys, r, sources);
+    const leadSourceFilter =
+      sources?.length ? { source: { in: sources } as any } : {};
 
     const [
-  leadsCreated,
-  callReq,
-  calls,
-  answered,
-  setterNoShow,
+      leadsCreated,
+      callReq,
+      calls,
+      answered,
+      setterNoShow,
 
-  rv0P, rv0H, rv0NS, rv0C, rv0NotQ,
-  rv1P, rv1H, rv1NS, rv1C, rv1NotQ, rv1Post,
-  rv2P, rv2H, rv2NS, rv2C, rv2Post,
+      rv0P, rv0H, rv0NS, rv0C, rv0NotQ,
+      rv1P, rv1H, rv1NS, rv1C, rv1NotQ, rv1Post,
+      rv2P, rv2H, rv2NS, rv2C, rv2Post,
 
-  followUpSetter,
-  followUpCloser,
-  notQual,
-  lost,
-  wonCount,
-  appointmentCanceled,
-] = await Promise.all([
-  // Leads reçus
-  this.prisma.lead.count({ where: between('createdAt', r) }),
+      followUpSetter,
+      followUpCloser,
+      notQual,
+      lost,
+      wonCount,
+      appointmentCanceled,
+    ] = await Promise.all([
+      // Leads reçus
+      this.prisma.lead.count({
+        where: {
+          ...between('createdAt', r),
+          ...leadSourceFilter,
+        },
+      }),
 
-  // Demandes d’appel / appels / réponses
-  get(['CALL_REQUESTED']),
-  get(['CALL_ATTEMPT']),
-  get(['CALL_ANSWERED']),
-  get(['SETTER_NO_SHOW']),
+      // Demandes d’appel / appels / réponses
+      get(['CALL_REQUESTED']),
+      get(['CALL_ATTEMPT']),
+      get(['CALL_ANSWERED']),
+      get(['SETTER_NO_SHOW']),
 
-  // RV0
-  get(['RV0_PLANNED']),
-  get(['RV0_HONORED']),
-  get(['RV0_NO_SHOW']),
-  get(['RV0_CANCELED']),
-  get(['RV0_NOT_QUALIFIED']),
+      // RV0
+      get(['RV0_PLANNED']),
+      get(['RV0_HONORED']),
+      get(['RV0_NO_SHOW']),
+      get(['RV0_CANCELED']),
+      get(['RV0_NOT_QUALIFIED']),
 
-  // RV1
-  get(['RV1_PLANNED']),
-  get(['RV1_HONORED']),
-  get(['RV1_NO_SHOW']),
-  get(['RV1_CANCELED']),
-  get(['RV1_NOT_QUALIFIED']),
-  get(['RV1_POSTPONED']),   // 🔥 ici
+      // RV1
+      get(['RV1_PLANNED']),
+      get(['RV1_HONORED']),
+      get(['RV1_NO_SHOW']),
+      get(['RV1_CANCELED']),
+      get(['RV1_NOT_QUALIFIED']),
+      get(['RV1_POSTPONED']),   // 🔥 ici
 
-  // RV2
-  get(['RV2_PLANNED']),
-  get(['RV2_HONORED']),
-  get(['RV2_NO_SHOW']),
-  get(['RV2_CANCELED']),
-  get(['RV2_POSTPONED']),
+      // RV2
+      get(['RV2_PLANNED']),
+      get(['RV2_HONORED']),
+      get(['RV2_NO_SHOW']),
+      get(['RV2_CANCELED']),
+      get(['RV2_POSTPONED']),
 
-  // Follow up
-  get(['FOLLOW_UP']),
-  get(['FOLLOW_UP_CLOSER']),
+      // Follow up
+      get(['FOLLOW_UP']),
+      get(['FOLLOW_UP_CLOSER']),
 
-  // Flags globaux
-  get(['NOT_QUALIFIED']),
-  get(['LOST']),
+      // Flags globaux
+      get(['NOT_QUALIFIED']),
+      get(['LOST']),
 
-  // WON
-  (async () => {
-    const where = await this.wonFilter(r);
-    return this.prisma.lead.count({ where });
-  })(),
+      // WON
+      (async () => {
+        const where = await this.wonFilter(r);
+        if (sources?.length) {
+          (where as any).source = { in: sources };
+        }
+        return this.prisma.lead.count({ where });
+      })(),
 
-  this.prisma.appointment.count({
-    where: { status: AppointmentStatus.CANCELED, ...between('scheduledAt', r) },
-  }),
-]);
+      // Annulations de rendez-vous (ici je laisse non filtré par source, tu peux l'ajouter plus tard via relation lead)
+      this.prisma.appointment.count({
+        where: {
+          status: AppointmentStatus.CANCELED,
+          ...between('scheduledAt', r),
+        },
+      }),
+    ]);
 
     return {
       leads: num(leadsCreated),
@@ -1992,14 +2094,13 @@ async spotlightSetters(from?: string, to?: string): Promise<SpotlightSetterRow[]
       rv1Honored: num(rv1H),
       rv1NoShow: num(rv1NS),
       rv1Canceled: num(rv1C),
-      rv1Postponed: num(rv1Post), // 🔥 nouveau
+      rv1Postponed: num(rv1Post),
 
       rv2Planned: num(rv2P),
       rv2Honored: num(rv2H),
       rv2NoShow: num(rv2NS),
       rv2Canceled: num(rv2C),
 
-      // 🔥 nouveaux champs
       rv2Postponed: num(rv2Post),
 
       rv0NotQualified: num(rv0NotQ),
@@ -2014,19 +2115,21 @@ async spotlightSetters(from?: string, to?: string): Promise<SpotlightSetterRow[]
 
       appointmentCanceled: num(appointmentCanceled),
     };
-
-
   }
 
 
-  async funnel(from?: string, to?: string): Promise<FunnelOut> {
+    async funnel(
+    from?: string,
+    to?: string,
+    sourcesCsv?: string,
+  ): Promise<FunnelOut> {
     const r = toRange(from, to);
-    const totals = await this.funnelFromStages(r);
+    const sources = parseSourcesParam(sourcesCsv);
 
+    const totals = await this.funnelFromStages(r, sources);
 
     const start = mondayOfUTC(r.from ?? new Date());
     const end = sundayOfUTC(r.to ?? new Date());
-
 
     const weekly: FunnelWeeklyRow[] = [];
     for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 7)) {
@@ -2034,22 +2137,31 @@ async spotlightSetters(from?: string, to?: string): Promise<SpotlightSetterRow[]
       const we = sundayOfUTC(d);
       const clip = intersectWindow(ws, we, r.from, r.to);
       const wRange: Range = { from: clip?.start, to: clip?.end };
-      const wTotals = await this.funnelFromStages(wRange);
-      weekly.push({ weekStart: ws.toISOString(), weekEnd: we.toISOString(), ...wTotals });
+      const wTotals = await this.funnelFromStages(wRange, sources);
+      weekly.push({
+        weekStart: ws.toISOString(),
+        weekEnd: we.toISOString(),
+        ...wTotals,
+      });
     }
-
 
     return { period: { from, to }, totals, weekly };
   }
 
 
+
   /* ---------------- Weekly series (pour /reporting/weekly-ops) ---------------- */
-  async weeklySeries(from?: string, to?: string): Promise<WeeklyOpsRow[]> {
+  async weeklySeries(
+    from?: string,
+    to?: string,
+    sourcesCsv?: string,
+  ): Promise<WeeklyOpsRow[]> {
     const r = toRange(from, to);
+    const sources = parseSourcesParam(sourcesCsv);
+
     const start = mondayOfUTC(r.from ?? new Date());
     const end = sundayOfUTC(r.to ?? new Date());
     const out: WeeklyOpsRow[] = [];
-
 
     for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 7)) {
       const ws = mondayOfUTC(d);
@@ -2057,31 +2169,30 @@ async spotlightSetters(from?: string, to?: string): Promise<SpotlightSetterRow[]
       const clip = intersectWindow(ws, we, r.from, r.to);
       const wRange: Range = { from: clip?.start, to: clip?.end };
 
-
       const row: WeeklyOpsRow = {
         weekStart: ws.toISOString(),
         weekEnd: we.toISOString(),
-        rv0Planned: await this.countEnteredInStages(['RV0_PLANNED'], wRange),
-        rv0Honored: await this.countEnteredInStages(['RV0_HONORED'], wRange),
-        rv0NoShow: await this.countEnteredInStages(['RV0_NO_SHOW'], wRange),
+        callRequests: await this.countEnteredInStages(['CALL_REQUESTED'], wRange, sources),
+        rv0Planned: await this.countEnteredInStages(['RV0_PLANNED'], wRange, sources),
+        rv0Honored: await this.countEnteredInStages(['RV0_HONORED'], wRange, sources),
+        rv0NoShow: await this.countEnteredInStages(['RV0_NO_SHOW'], wRange, sources),
 
-        rv1Planned: await this.countEnteredInStages(['RV1_PLANNED'], wRange),
-        rv1Honored: await this.countEnteredInStages(['RV1_HONORED'], wRange),
-        rv1NoShow: await this.countEnteredInStages(['RV1_NO_SHOW'], wRange),
+        rv1Planned: await this.countEnteredInStages(['RV1_PLANNED'], wRange, sources),
+        rv1Honored: await this.countEnteredInStages(['RV1_HONORED'], wRange, sources),
+        rv1NoShow: await this.countEnteredInStages(['RV1_NO_SHOW'], wRange, sources),
 
-        rv2Planned: await this.countEnteredInStages(['RV2_PLANNED'], wRange),
-        rv2Honored: await this.countEnteredInStages(['RV2_HONORED'], wRange),
-        rv2NoShow: await this.countEnteredInStages(['RV2_NO_SHOW'], wRange),
-        rv2Postponed: await this.countEnteredInStages(['RV2_POSTPONED'], wRange),
-        
-        notQualified: await this.countEnteredInStages(['NOT_QUALIFIED'], wRange),
-        lost: await this.countEnteredInStages(['LOST'], wRange),
+        rv2Planned: await this.countEnteredInStages(['RV2_PLANNED'], wRange, sources),
+        rv2Honored: await this.countEnteredInStages(['RV2_HONORED'], wRange, sources),
+        rv2NoShow: await this.countEnteredInStages(['RV2_NO_SHOW'], wRange, sources),
+        rv2Postponed: await this.countEnteredInStages(['RV2_POSTPONED'], wRange, sources),
+
+        notQualified: await this.countEnteredInStages(['NOT_QUALIFIED'], wRange, sources),
+        lost: await this.countEnteredInStages(['LOST'], wRange, sources),
       };
       out.push(row);
     }
     return out;
   }
-
 
   /* =================== METRICS JOURNALIÈRES BASÉES SUR LES STAGES =================== */
 
@@ -2528,7 +2639,3 @@ async spotlightSetters(from?: string, to?: string): Promise<SpotlightSetterRow[]
     return { ok: true, count: items.length, items };
   }
 }
-
-
-
-
