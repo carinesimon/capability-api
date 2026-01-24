@@ -21,3 +21,10 @@
 - Provide diffs per file with clear reasoning.
 - If changing API, include example request/response.
 - If changing DB, include migration steps and rollback notes.
+
+## Manual-apply mode (when requested)
+If the user asks for a manual application:
+- Do NOT implement changes directly.
+- Output an "Apply Plan" with exact file paths, exact code blocks to paste, and the exact line/section to replace.
+- Provide a checklist to verify (commands + expected output).
+- If multiple changes, number them and keep each change minimal.
