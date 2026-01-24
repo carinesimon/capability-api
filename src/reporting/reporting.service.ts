@@ -26,6 +26,70 @@ function parseSourcesParam(s?: string): string[] {
     .filter(Boolean);
 }
 
+function parseCsvParam(s?: string): string[] {
+  if (!s) return [];
+  return s
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+type LeadFilterCsvParams = {
+  sourcesCsv?: string;
+  sourcesExcludeCsv?: string;
+  setterIdsCsv?: string;
+  closerIdsCsv?: string;
+};
+
+function buildLeadWhereBase(
+  params: LeadFilterCsvParams & { alias?: string },
+): Prisma.Sql {
+  const alias = params.alias ?? 'l';
+  const clauses: Prisma.Sql[] = [];
+  const sourceList = parseSourcesParam(params.sourcesCsv);
+  const excludeList = parseSourcesParam(params.sourcesExcludeCsv);
+  const setterIds = parseCsvParam(params.setterIdsCsv);
+  const closerIds = parseCsvParam(params.closerIdsCsv);
+
+  if (sourceList.length) {
+    clauses.push(
+      Prisma.sql`${Prisma.raw(`${alias}."source"`)} IN (${Prisma.join(sourceList)})`,
+    );
+  }
+  if (excludeList.length) {
+    clauses.push(
+      Prisma.sql`${Prisma.raw(`${alias}."source"`)} NOT IN (${Prisma.join(excludeList)})`,
+    );
+  }
+  if (setterIds.length) {
+    clauses.push(
+      Prisma.sql`${Prisma.raw(`${alias}."setterId"`)} IN (${Prisma.join(setterIds)})`,
+    );
+  }
+  if (closerIds.length) {
+    clauses.push(
+      Prisma.sql`${Prisma.raw(`${alias}."closerId"`)} IN (${Prisma.join(closerIds)})`,
+    );
+  }
+
+  return clauses.length
+    ? Prisma.sql`AND ${Prisma.join(clauses, ' AND ')}`
+    : Prisma.empty;
+}
+
+function buildStageEventWhereBase(params: {
+  asOf?: string;
+  tz: string;
+  alias?: string;
+}): Prisma.Sql {
+  const alias = params.alias ?? 'se';
+  if (!params.asOf) return Prisma.empty;
+  return Prisma.sql`
+    AND (${Prisma.raw(`${alias}."occurredAt"`)} AT TIME ZONE ${params.tz})
+      <= (${params.asOf}::date + interval '1 day' - interval '1 millisecond')
+  `;
+}
+
 /* ---------------- Dates helpers (UTC) ---------------- */
 function toUTCDateOnly(s?: string) {
   if (!s) return undefined;
@@ -529,6 +593,13 @@ type FunnelOut = {
   period: { from?: string; to?: string };
   totals: FunnelTotals;
   weekly: FunnelWeeklyRow[];
+};
+
+type CohortStatusParams = LeadFilterCsvParams & {
+  cohortFrom: string;
+  cohortTo: string;
+  asOf: string;
+  tz?: string;
 };
 
 /* ---------- Duos (setter × closer) ---------- */
@@ -1107,6 +1178,78 @@ async exportSpotlightClosersPDF({ from, to }: { from?: string; to?: string }): P
       }
     }
     return { total: num(total), byDay: days.length ? days : undefined };
+  }
+
+  async cohortStatus(params: CohortStatusParams) {
+    const {
+      cohortFrom,
+      cohortTo,
+      asOf,
+      tz = 'Europe/Paris',
+      sourcesCsv,
+      sourcesExcludeCsv,
+      setterIdsCsv,
+      closerIdsCsv,
+    } = params;
+    const leadWhereBase = buildLeadWhereBase({
+      alias: 'l',
+      sourcesCsv,
+      sourcesExcludeCsv,
+      setterIdsCsv,
+      closerIdsCsv,
+    });
+    const stageEventWhereBase = buildStageEventWhereBase({
+      asOf,
+      tz,
+      alias: 'se',
+    });
+    const cohortRange = Prisma.sql`
+      ((${Prisma.raw('l."createdAt"')} AT TIME ZONE ${tz})::date
+        BETWEEN ${cohortFrom}::date AND ${cohortTo}::date)
+    `;
+
+    const totalRows = await this.prisma.$queryRaw<Array<{ n: number }>>(
+      Prisma.sql`
+        SELECT COUNT(*)::int AS n
+        FROM "Lead" l
+        WHERE ${cohortRange}
+        ${leadWhereBase}
+      `,
+    );
+    const total = totalRows?.[0]?.n ?? 0;
+
+    const rows = await this.prisma.$queryRaw<
+      Array<{ stage: LeadStage; n: number }>
+    >(Prisma.sql`
+        SELECT latest."toStage" AS stage, COUNT(*)::int AS n
+        FROM (
+          SELECT DISTINCT ON (se."leadId")
+            se."leadId",
+            se."toStage"
+          FROM "StageEvent" se
+          JOIN "Lead" l ON l."id" = se."leadId"
+          WHERE ${cohortRange}
+          ${leadWhereBase}
+          ${stageEventWhereBase}
+          ORDER BY se."leadId", se."occurredAt" DESC
+        ) latest
+        GROUP BY latest."toStage"
+      `);
+
+    const byStage: Record<string, number> = {};
+    let withStage = 0;
+    for (const row of rows) {
+      const count = row.n ?? 0;
+      byStage[row.stage] = count;
+      withStage += count;
+    }
+    const unreached = Math.max(0, total - withStage);
+
+    return {
+      period: { cohortFrom, cohortTo, asOf, tz },
+      totals: { total, withStage, unreached },
+      byStage,
+    };
   }
 
   /* ---------------- Ventes (WON) + hebdo ---------------- */

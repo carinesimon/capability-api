@@ -16,6 +16,23 @@ export class ReportingController {
     return this.reporting.summary(from, to);
   }
 
+  @Post('reporting/cohort-status')
+  async cohortStatus(
+    @Body()
+    body: {
+      cohortFrom: string;
+      cohortTo: string;
+      asOf: string;
+      tz?: string;
+      sourcesCsv?: string;
+      sourcesExcludeCsv?: string;
+      setterIdsCsv?: string;
+      closerIdsCsv?: string;
+    },
+  ) {
+    return this.reporting.cohortStatus(body);
+  }
+
   /* --------- Budgets (comptable) --------- */
 
   @Get('reporting/budget')
