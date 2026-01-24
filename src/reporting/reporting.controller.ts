@@ -7,13 +7,29 @@ export class ReportingController {
   constructor(private readonly reporting: ReportingService) {}
 
   /* --------- Bloc /reporting --------- */
-  @Get('reporting/summary')
   async getSummary(
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('tz') _tz?: string,
   ) {
     return this.reporting.summary(from, to);
+  }
+
+  @Post('reporting/cohort-status')
+  async cohortStatus(
+    @Body()
+    body: {
+      cohortFrom: string;
+      cohortTo: string;
+      asOf: string;
+      tz?: string;
+      sourcesCsv?: string;
+      sourcesExcludeCsv?: string;
+      setterIdsCsv?: string;
+      closerIdsCsv?: string;
+    },
+  ) {
+    return this.reporting.cohortStatus(body);
   }
 
   /* --------- Budgets (comptable) --------- */
@@ -289,4 +305,5 @@ async exportSpotlightClosersPdf(
     return this.reporting.canceledDaily(from, to);
   }
 }
+
 
