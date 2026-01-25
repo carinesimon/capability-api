@@ -7,7 +7,7 @@ export class ReportingController {
   constructor(private readonly reporting: ReportingService) {}
 
   /* --------- Bloc /reporting --------- */
-  async getSummary(
+async getSummary(
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('tz') _tz?: string,
@@ -305,5 +305,6 @@ async exportSpotlightClosersPdf(
     return this.reporting.canceledDaily(from, to);
   }
 }
+
 
 
