@@ -18,6 +18,11 @@ export class ReportingController {
     return this.reporting.summary(from, to, sourcesCsv, sourcesExcludeCsv);
   }
 
+  @Get('filter-options')
+  async getFilterOptions() {
+    return this.reporting.filterOptions();
+  }
+
   @Post('cohort-status')
   async cohortStatus(
     @Body()
