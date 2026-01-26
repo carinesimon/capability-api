@@ -1,7 +1,39 @@
 // backend/src/modules/metrics/metrics.service.ts
 import { Injectable } from '@nestjs/common';
+import { Prisma, LeadStage } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { LeadStage } from '@prisma/client';
+
+function parseCsv(value?: string): string[] {
+  if (!value) return [];
+  const unique = new Set(
+    value
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean),
+  );
+  return Array.from(unique);
+}
+
+function buildLeadSourceWhere(
+  sourcesCsv?: string,
+  sourcesExcludeCsv?: string,
+): Prisma.LeadWhereInput {
+  const includes = parseCsv(sourcesCsv);
+  const excludes = parseCsv(sourcesExcludeCsv);
+  const clauses: Prisma.LeadWhereInput[] = [];
+
+  if (includes.length) {
+    clauses.push({ source: { in: includes } });
+  }
+
+  if (excludes.length) {
+    clauses.push({ source: { notIn: excludes } });
+  }
+
+  if (!clauses.length) return {};
+  if (clauses.length === 1) return clauses[0];
+  return { AND: clauses };
+}
 
 /**
  * Sortie du funnel : un simple Record<string, number>
@@ -110,8 +142,14 @@ export class MetricsService {
    * Basé sur StageEvent (toStage), période [start, end)
    * → 1 event max par lead/stage (grâce au StageEvent.upsert)
    */
-  async stageSeriesByDay(params: { start: Date; end: Date; stage: LeadStage }) {
-    const { start, end, stage } = params;
+  async stageSeriesByDay(params: {
+    start: Date;
+    end: Date;
+    stage: LeadStage;
+    sourcesCsv?: string;
+    sourcesExcludeCsv?: string;
+  }) {
+    const { start, end, stage, sourcesCsv, sourcesExcludeCsv } = params;
 
     const events = await this.prisma.stageEvent.findMany({
       where: {
@@ -120,6 +158,7 @@ export class MetricsService {
           gte: start,
           lt: end,
         },
+        lead: buildLeadSourceWhere(sourcesCsv, sourcesExcludeCsv),
       },
       select: { occurredAt: true },
     });
