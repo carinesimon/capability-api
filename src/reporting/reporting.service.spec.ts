@@ -1,10 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AppointmentStatus, AppointmentType, Role } from '@prisma/client';
+import { buildLeadSourceWhere, parseCsv } from './reporting.service';
 
 type Range = { from?: Date; to?: Date };
 function range(from?: string, to?: string): Range {
-  return { from: from ? new Date(from) : undefined, to: to ? new Date(to) : undefined };
+  return {
+    from: from ? new Date(from) : undefined,
+    to: to ? new Date(to) : undefined,
+  };
 }
 function between(field: 'createdAt' | 'scheduledAt', r: Range) {
   if (!r.from && !r.to) return {};
@@ -46,25 +50,46 @@ export class ReportingService {
   constructor(private prisma: PrismaService) {}
 
   // ---- SETTERS ----
-  async settersReport(from?: string, to?: string, userId?: string): Promise<SetterRow[]> {
+  async settersReport(
+    from?: string,
+    to?: string,
+    userId?: string,
+  ): Promise<SetterRow[]> {
     const r = range(from, to);
 
     const setters = await this.prisma.user.findMany({
-      where: { role: Role.SETTER, isActive: true, ...(userId ? { id: userId } : {}) },
+      where: {
+        role: Role.SETTER,
+        isActive: true,
+        ...(userId ? { id: userId } : {}),
+      },
       select: { id: true, firstName: true, email: true },
       orderBy: { firstName: 'asc' },
     });
 
     const spendAgg = await this.prisma.budget.aggregate({
       _sum: { amount: true },
-      where: (r.from || r.to)
-        ? {
-            OR: [
-              { period: 'WEEKLY', weekStart: { gte: r.from ?? undefined, lte: r.to ?? undefined } },
-              { period: 'MONTHLY', monthStart: { gte: r.from ?? undefined, lte: r.to ?? undefined } },
-            ],
-          }
-        : undefined,
+      where:
+        r.from || r.to
+          ? {
+              OR: [
+                {
+                  period: 'WEEKLY',
+                  weekStart: {
+                    gte: r.from ?? undefined,
+                    lte: r.to ?? undefined,
+                  },
+                },
+                {
+                  period: 'MONTHLY',
+                  monthStart: {
+                    gte: r.from ?? undefined,
+                    lte: r.to ?? undefined,
+                  },
+                },
+              ],
+            }
+          : undefined,
     });
     const spend = spendAgg._sum.amount ?? 0;
 
@@ -78,12 +103,20 @@ export class ReportingService {
       const leadsReceived = leadIds.length;
 
       const rv0Count = await this.prisma.appointment.count({
-        where: { userId: s.id, type: AppointmentType.RV0, ...between('scheduledAt', r) },
+        where: {
+          userId: s.id,
+          type: AppointmentType.RV0,
+          ...between('scheduledAt', r),
+        },
       });
 
       const rv1FromHisLeads = leadIds.length
         ? await this.prisma.appointment.count({
-            where: { type: AppointmentType.RV1, leadId: { in: leadIds }, ...between('scheduledAt', r) },
+            where: {
+              type: AppointmentType.RV1,
+              leadId: { in: leadIds },
+              ...between('scheduledAt', r),
+            },
           })
         : 0;
 
@@ -104,17 +137,24 @@ export class ReportingService {
           select: { scheduledAt: true },
         });
         if (firstRv0) {
-          const diffMs = firstRv0.scheduledAt.getTime() - lead.createdAt.getTime();
+          const diffMs =
+            firstRv0.scheduledAt.getTime() - lead.createdAt.getTime();
           ttfcSum += Math.round(diffMs / 60000);
           ttfcN += 1;
         }
       }
       const ttfcAvgMinutes = ttfcN ? Math.round(ttfcSum / ttfcN) : null;
 
-      const cpl = leadsReceived ? Number((spend / leadsReceived).toFixed(2)) : null;
+      const cpl = leadsReceived
+        ? Number((spend / leadsReceived).toFixed(2))
+        : null;
       const cpRv0 = rv0Count ? Number((spend / rv0Count).toFixed(2)) : null;
-      const cpRv1 = rv1FromHisLeads ? Number((spend / rv1FromHisLeads).toFixed(2)) : null;
-      const roas = spend ? Number((revenueFromHisLeads / spend).toFixed(2)) : null;
+      const cpRv1 = rv1FromHisLeads
+        ? Number((spend / rv1FromHisLeads).toFixed(2))
+        : null;
+      const roas = spend
+        ? Number((revenueFromHisLeads / spend).toFixed(2))
+        : null;
 
       rows.push({
         userId: s.id,
@@ -136,11 +176,19 @@ export class ReportingService {
   }
 
   // ---- CLOSERS ----
-  async closersReport(from?: string, to?: string, userId?: string): Promise<CloserRow[]> {
+  async closersReport(
+    from?: string,
+    to?: string,
+    userId?: string,
+  ): Promise<CloserRow[]> {
     const r = range(from, to);
 
     const closers = await this.prisma.user.findMany({
-      where: { role: Role.CLOSER, isActive: true, ...(userId ? { id: userId } : {}) },
+      where: {
+        role: Role.CLOSER,
+        isActive: true,
+        ...(userId ? { id: userId } : {}),
+      },
       select: { id: true, firstName: true, email: true },
       orderBy: { firstName: 'asc' },
     });
@@ -148,19 +196,42 @@ export class ReportingService {
     const results: CloserRow[] = [];
     for (const c of closers) {
       const rv1Planned = await this.prisma.appointment.count({
-        where: { userId: c.id, type: AppointmentType.RV1, ...between('scheduledAt', r) },
+        where: {
+          userId: c.id,
+          type: AppointmentType.RV1,
+          ...between('scheduledAt', r),
+        },
       });
       const rv1Honored = await this.prisma.appointment.count({
-        where: { userId: c.id, type: AppointmentType.RV1, status: AppointmentStatus.HONORED, ...between('scheduledAt', r) },
+        where: {
+          userId: c.id,
+          type: AppointmentType.RV1,
+          status: AppointmentStatus.HONORED,
+          ...between('scheduledAt', r),
+        },
       });
       const rv1NoShow = await this.prisma.appointment.count({
-        where: { userId: c.id, type: AppointmentType.RV1, status: AppointmentStatus.NO_SHOW, ...between('scheduledAt', r) },
+        where: {
+          userId: c.id,
+          type: AppointmentType.RV1,
+          status: AppointmentStatus.NO_SHOW,
+          ...between('scheduledAt', r),
+        },
       });
       const rv2Planned = await this.prisma.appointment.count({
-        where: { userId: c.id, type: AppointmentType.RV2, ...between('scheduledAt', r) },
+        where: {
+          userId: c.id,
+          type: AppointmentType.RV2,
+          ...between('scheduledAt', r),
+        },
       });
       const rv2Honored = await this.prisma.appointment.count({
-        where: { userId: c.id, type: AppointmentType.RV2, status: AppointmentStatus.HONORED, ...between('scheduledAt', r) },
+        where: {
+          userId: c.id,
+          type: AppointmentType.RV2,
+          status: AppointmentStatus.HONORED,
+          ...between('scheduledAt', r),
+        },
       });
 
       const salesClosed = await this.prisma.contract.count({
@@ -172,8 +243,12 @@ export class ReportingService {
       });
       const revenueTotal = revenueAgg._sum.total ?? 0;
 
-      const rosPlanned = rv1Planned ? Number((revenueTotal / rv1Planned).toFixed(2)) : null;
-      const rosHonored = rv1Honored ? Number((revenueTotal / rv1Honored).toFixed(2)) : null;
+      const rosPlanned = rv1Planned
+        ? Number((revenueTotal / rv1Planned).toFixed(2))
+        : null;
+      const rosHonored = rv1Honored
+        ? Number((revenueTotal / rv1Honored).toFixed(2))
+        : null;
 
       results.push({
         userId: c.id,
@@ -194,3 +269,27 @@ export class ReportingService {
     return results;
   }
 }
+
+describe('reporting source filters', () => {
+  it('parseCsv trims, de-dupes, and drops empty values', () => {
+    expect(parseCsv(' meta ads, ,meta ads,google  ,')).toEqual([
+      'meta ads',
+      'google',
+    ]);
+  });
+
+  it('buildLeadSourceWhere merges include/exclude lists', () => {
+    expect(buildLeadSourceWhere('meta,google', 'google')).toEqual({
+      AND: [
+        { source: { in: ['meta', 'google'] } },
+        { source: { notIn: ['google'] } },
+      ],
+    });
+  });
+
+  it('buildLeadSourceWhere can include unknown sources', () => {
+    expect(buildLeadSourceWhere('meta', undefined, true)).toEqual({
+      OR: [{ source: { in: ['meta'] } }, { source: null }],
+    });
+  });
+});
