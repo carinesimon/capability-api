@@ -2,11 +2,12 @@
 // backend/src/modules/reporting/reporting.controller.ts
 import { Body, Controller, Get, Post, Query, Res } from '@nestjs/common';
 import { ReportingService } from './reporting.service';
-@Controller()
+@Controller('reporting')
 export class ReportingController {
   constructor(private readonly reporting: ReportingService) {}
 
   /* --------- Bloc /reporting --------- */
+  @Get('summary')
   async getSummary(
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -17,7 +18,7 @@ export class ReportingController {
     return this.reporting.summary(from, to, sourcesCsv, sourcesExcludeCsv);
   }
 
-  @Post('reporting/cohort-status')
+  @Post('cohort-status')
   async cohortStatus(
     @Body()
     body: {
@@ -36,13 +37,13 @@ export class ReportingController {
 
   /* --------- Budgets (comptable) --------- */
 
-  @Get('reporting/budget')
+  @Get('budget')
   async getBudgets() {
     // Retourne la liste des budgets hebdos, utilisée par BudgetPanel
     return this.reporting.listWeeklyBudgets();
   }
 
-  @Post('reporting/budget')
+  @Post('budget')
   async upsertBudget(
     @Body()
     body: {
@@ -61,7 +62,7 @@ export class ReportingController {
     return { ok: true, budget };
   }
 
-  @Get('reporting/sources')
+  @Get('sources')
   async listSources(
     @Query('search') search?: string,
     @Query('includeUnknown') includeUnknownStr?: string,
@@ -80,7 +81,7 @@ export class ReportingController {
     });
   }
 
-  @Get('reporting/leads-received')
+  @Get('leads-received')
   async getLeadsReceived(
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -97,7 +98,7 @@ export class ReportingController {
   }
 
   // ✅ corriger le chemin + utiliser this.reporting
-  @Get('reporting/spotlight-setters')
+  @Get('spotlight-setters')
   spotlightSetters(
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -114,7 +115,7 @@ export class ReportingController {
   }
 
   // ✅ corriger le chemin + utiliser this.reporting
-  @Get('reporting/spotlight-closers')
+  @Get('spotlight-closers')
   spotlightClosers(
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -131,7 +132,7 @@ export class ReportingController {
   }
 
   // ===== EXPORTS SPOTLIGHT =====
-  @Get('reporting/export/spotlight-setters.csv')
+  @Get('export/spotlight-setters.csv')
   async exportSpotlightSettersCsv(
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -154,7 +155,7 @@ export class ReportingController {
     return res.send(buf);
   }
 
-  @Get('reporting/export/spotlight-closers.csv')
+  @Get('export/spotlight-closers.csv')
   async exportSpotlightClosersCsv(
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -177,7 +178,7 @@ export class ReportingController {
     return res.send(buf);
   }
 
-  @Get('reporting/export/spotlight-setters.pdf')
+  @Get('export/spotlight-setters.pdf')
   async exportSpotlightSettersPdf(
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -200,7 +201,7 @@ export class ReportingController {
     return res.send(buf);
   }
 
-  @Get('reporting/export/spotlight-closers.pdf')
+  @Get('export/spotlight-closers.pdf')
   async exportSpotlightClosersPdf(
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -223,7 +224,7 @@ export class ReportingController {
     return res.send(buf);
   }
 
-  @Get('reporting/sales-weekly')
+  @Get('sales-weekly')
   async getSalesWeekly(
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -234,7 +235,7 @@ export class ReportingController {
     return this.reporting.salesWeekly(from, to, sourcesCsv, sourcesExcludeCsv);
   }
 
-  @Get('reporting/setters')
+  @Get('setters')
   async getSetters(
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -250,7 +251,7 @@ export class ReportingController {
     );
   }
 
-  @Get('reporting/closers')
+  @Get('closers')
   async getClosers(
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -266,7 +267,7 @@ export class ReportingController {
     );
   }
 
-  @Get('reporting/duos')
+  @Get('duos')
   async getDuos(
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -277,7 +278,7 @@ export class ReportingController {
     return this.reporting.duosReport(from, to, sourcesCsv, sourcesExcludeCsv);
   }
 
-  @Get('reporting/weekly-ops')
+  @Get('weekly-ops')
   async getWeeklyOps(
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -294,7 +295,7 @@ export class ReportingController {
     return { ok: true as const, rows };
   }
 
-  @Get('reporting/funnel')
+  @Get('funnel')
   async getFunnel(
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -305,7 +306,7 @@ export class ReportingController {
     return this.reporting.funnel(from, to, sourcesCsv, sourcesExcludeCsv);
   }
 
-  @Get('reporting/pipeline-metrics')
+  @Get('pipeline-metrics')
   async getPipelineMetrics(
     @Query('keys') keys?: string,
     @Query('from') from?: string,
@@ -330,7 +331,7 @@ export class ReportingController {
   }
 
   /* --------- DRILLS --------- */
-  @Get('reporting/drill/leads-received')
+  @Get('drill/leads-received')
   async drillLeads(
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -349,7 +350,7 @@ export class ReportingController {
     });
   }
 
-  @Get('reporting/drill/won')
+  @Get('drill/won')
   async drillWon(
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -368,7 +369,7 @@ export class ReportingController {
     });
   }
 
-  @Get('reporting/drill/appointments')
+  @Get('drill/appointments')
   async drillAppointments(
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -394,7 +395,7 @@ export class ReportingController {
     });
   }
 
-  @Get('reporting/drill/call-requests')
+  @Get('drill/call-requests')
   async drillCallRequests(
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -413,7 +414,7 @@ export class ReportingController {
     });
   }
 
-  @Get('reporting/drill/calls')
+  @Get('drill/calls')
   async drillCalls(
     @Query('from') from?: string,
     @Query('to') to?: string,
@@ -476,7 +477,7 @@ export class ReportingController {
     );
   }
 
-  @Get('reporting/metrics/canceled-daily')
+  @Get('metrics/canceled-daily')
   async canceledDaily(
     @Query('from') from?: string,
     @Query('to') to?: string,
