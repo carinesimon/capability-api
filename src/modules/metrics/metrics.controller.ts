@@ -5,13 +5,32 @@ import { LeadStage } from '@prisma/client';
 
 function parseDateOrThrow(label: string, value?: string): Date {
   if (!value) {
-    throw new BadRequestException(`Query param "${label}" est requis (YYYY-MM-DD)`);
+    throw new BadRequestException(
+      `Query param "${label}" est requis (YYYY-MM-DD)`,
+    );
   }
   const d = new Date(value);
   if (isNaN(d.getTime())) {
-    throw new BadRequestException(`Query param "${label}" invalide : "${value}"`);
+    throw new BadRequestException(
+      `Query param "${label}" invalide : "${value}"`,
+    );
   }
   return d;
+}
+
+function parseLeadStageOrThrow(value?: string): LeadStage {
+  if (!value) {
+    throw new BadRequestException('Query param "stage" est requis');
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new BadRequestException('Query param "stage" est requis');
+  }
+  const isValidStage = Object.values(LeadStage).includes(trimmed as LeadStage);
+  if (!isValidStage) {
+    throw new BadRequestException(`Query param "stage" invalide : "${value}"`);
+  }
+  return trimmed as LeadStage;
 }
 
 @Controller('metrics')
@@ -87,43 +106,38 @@ export class MetricsController {
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    if (!stageStr) {
-      throw new BadRequestException('Query param "stage" est requis');
-    }
-
+    const stage = parseLeadStageOrThrow(stageStr);
     const start = parseDateOrThrow('from', from);
     const endDate = parseDateOrThrow('to', to);
 
     const endExclusive = new Date(endDate);
     endExclusive.setDate(endExclusive.getDate() + 1);
 
-    // ⚠️ On ne fait PAS de check strict sur l'enum ici.
-    // On caste simplement: si le stage ne correspond à rien en DB → total = 0.
-    const stage = stageStr as LeadStage;
-
     return this.metrics.stageSeriesByDay({ start, end: endExclusive, stage });
   }
 
   /**
- * GET /metrics/canceled-by-day?from=YYYY-MM-DD&to=YYYY-MM-DD
- *
- * Retourne :
- * {
- *   total: number,
- *   byDay: [
- *     { day: "2025-11-01", RV0_CANCELED: 1, RV1_CANCELED: 2, RV2_CANCELED: 0, total: 3 },
- *     ...
- *   ]
- * }
- */
-@Get('canceled-by-day')
-async getCanceledByDay(@Query('from') from?: string, @Query('to') to?: string) {
-  const start = parseDateOrThrow('from', from);
-  const endDate = parseDateOrThrow('to', to);
-  const endExclusive = new Date(endDate);
-  endExclusive.setDate(endExclusive.getDate() + 1);
+   * GET /metrics/canceled-by-day?from=YYYY-MM-DD&to=YYYY-MM-DD
+   *
+   * Retourne :
+   * {
+   *   total: number,
+   *   byDay: [
+   *     { day: "2025-11-01", RV0_CANCELED: 1, RV1_CANCELED: 2, RV2_CANCELED: 0, total: 3 },
+   *     ...
+   *   ]
+   * }
+   */
+  @Get('canceled-by-day')
+  async getCanceledByDay(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    const start = parseDateOrThrow('from', from);
+    const endDate = parseDateOrThrow('to', to);
+    const endExclusive = new Date(endDate);
+    endExclusive.setDate(endExclusive.getDate() + 1);
 
-  return this.metrics.canceledByDay({ start, end: endExclusive });
-}
-
+    return this.metrics.canceledByDay({ start, end: endExclusive });
+  }
 }
