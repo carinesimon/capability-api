@@ -1590,7 +1590,7 @@ export class ReportingService {
       .sort((a, b) => a.localeCompare(b));
   }
 
-  async listReportingSources(args: ReportingSourcesArgs) {
+    async listReportingSources(args: ReportingSourcesArgs) {
     const search = args.search?.trim();
     const withCounts = args.withCounts ?? false;
     const withLastSeen = args.withLastSeen ?? false;
@@ -1661,6 +1661,80 @@ export class ReportingService {
     }
 
     return sources;
+  }
+
+  async filterOptions(): Promise<{
+    sources: Array<{
+      value: string;
+      label: string;
+      count?: number;
+      lastSeenAt?: string;
+    }>;
+    setters: Array<{
+      id: string;
+      firstName: string;
+      lastName?: string | null;
+      email?: string | null;
+      name: string;
+    }>;
+    closers: Array<{
+      id: string;
+      firstName: string;
+      lastName?: string | null;
+      email?: string | null;
+      name: string;
+    }>;
+    stages: Array<{ value: LeadStage; label: string }>;
+  }> {
+    const [sources, users] = await Promise.all([
+      this.listReportingSources({ includeUnknown: true }),
+      this.prisma.user.findMany({
+        where: { role: { in: [Role.SETTER, Role.CLOSER] }, isActive: true },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          role: true,
+        },
+        orderBy: [{ role: 'asc' }, { firstName: 'asc' }],
+      }),
+    ]);
+
+    const setters = users
+      .filter((user) => user.role === Role.SETTER)
+      .map((user) => ({
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        name: [user.firstName, user.lastName].filter(Boolean).join(' ').trim(),
+      }));
+
+    const closers = users
+      .filter((user) => user.role === Role.CLOSER)
+      .map((user) => ({
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        name: [user.firstName, user.lastName].filter(Boolean).join(' ').trim(),
+      }));
+
+    return {
+      sources: sources.map((source) => ({
+        value: source.source,
+        label: source.source,
+        count: source.count,
+        lastSeenAt: source.lastSeenAt,
+      })),
+      setters,
+      closers,
+      stages: Object.values(LeadStage).map((stage) => ({
+        value: stage,
+        label: stage,
+      })),
+    };
   }
 
   /* ---------------- Leads reçus (créations) ---------------- */
