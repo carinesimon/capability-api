@@ -5,32 +5,23 @@ import { LeadStage } from '@prisma/client';
 
 function parseDateOrThrow(label: string, value?: string): Date {
   if (!value) {
-    throw new BadRequestException(
-      `Query param "${label}" est requis (YYYY-MM-DD)`,
-    );
+    throw new BadRequestException(`Query param "${label}" est requis (YYYY-MM-DD)`);
   }
   const d = new Date(value);
   if (isNaN(d.getTime())) {
-    throw new BadRequestException(
-      `Query param "${label}" invalide : "${value}"`,
-    );
+    throw new BadRequestException(`Query param "${label}" invalide : "${value}"`);
   }
   return d;
 }
 
-function parseLeadStageOrThrow(value?: string): LeadStage {
+function parseStageOrThrow(value?: string): LeadStage {
   if (!value) {
     throw new BadRequestException('Query param "stage" est requis');
   }
-  const trimmed = value.trim();
-  if (!trimmed) {
-    throw new BadRequestException('Query param "stage" est requis');
-  }
-  const isValidStage = Object.values(LeadStage).includes(trimmed as LeadStage);
-  if (!isValidStage) {
+  if (!Object.values(LeadStage).includes(value as LeadStage)) {
     throw new BadRequestException(`Query param "stage" invalide : "${value}"`);
   }
-  return trimmed as LeadStage;
+  return value as LeadStage;
 }
 
 @Controller('metrics')
@@ -101,43 +92,27 @@ export class MetricsController {
    *  - RV0 no-show par jour (RV0_NO_SHOW) ensuite agrégé par semaine
    */
   @Get('stage-series')
-  async getStageSeries(
+   async getStageSeries(
     @Query('stage') stageStr?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('sourcesCsv') sourcesCsv?: string,
+    @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
   ) {
-    const stage = parseLeadStageOrThrow(stageStr);
+    const stage = parseStageOrThrow(stageStr);
     const start = parseDateOrThrow('from', from);
     const endDate = parseDateOrThrow('to', to);
 
     const endExclusive = new Date(endDate);
     endExclusive.setDate(endExclusive.getDate() + 1);
 
-    return this.metrics.stageSeriesByDay({ start, end: endExclusive, stage });
+    return this.metrics.stageSeriesByDay({
+      start,
+      end: endExclusive,
+      stage,
+      sourcesCsv,
+      sourcesExcludeCsv,
+    });
   }
 
-  /**
-   * GET /metrics/canceled-by-day?from=YYYY-MM-DD&to=YYYY-MM-DD
-   *
-   * Retourne :
-   * {
-   *   total: number,
-   *   byDay: [
-   *     { day: "2025-11-01", RV0_CANCELED: 1, RV1_CANCELED: 2, RV2_CANCELED: 0, total: 3 },
-   *     ...
-   *   ]
-   * }
-   */
-  @Get('canceled-by-day')
-  async getCanceledByDay(
-    @Query('from') from?: string,
-    @Query('to') to?: string,
-  ) {
-    const start = parseDateOrThrow('from', from);
-    const endDate = parseDateOrThrow('to', to);
-    const endExclusive = new Date(endDate);
-    endExclusive.setDate(endExclusive.getDate() + 1);
-
-    return this.metrics.canceledByDay({ start, end: endExclusive });
-  }
 }
