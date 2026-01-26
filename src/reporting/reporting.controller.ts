@@ -7,12 +7,14 @@ export class ReportingController {
   constructor(private readonly reporting: ReportingService) {}
 
   /* --------- Bloc /reporting --------- */
-async getSummary(
+  async getSummary(
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('tz') _tz?: string,
+    @Query('sourcesCsv') sourcesCsv?: string,
+    @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
   ) {
-    return this.reporting.summary(from, to);
+    return this.reporting.summary(from, to, sourcesCsv, sourcesExcludeCsv);
   }
 
   @Post('reporting/cohort-status')
@@ -45,7 +47,7 @@ async getSummary(
     @Body()
     body: {
       weekStartISO: string; // ex: '2025-11-24'
-      amount: number;       // ex: 500
+      amount: number; // ex: 500
     },
   ) {
     const weekStartISO = body.weekStartISO;
@@ -59,14 +61,39 @@ async getSummary(
     return { ok: true, budget };
   }
 
+  @Get('reporting/sources')
+  async listSources(
+    @Query('search') search?: string,
+    @Query('includeUnknown') includeUnknownStr?: string,
+    @Query('withCounts') withCountsStr?: string,
+    @Query('withLastSeen') withLastSeenStr?: string,
+  ) {
+    const includeUnknown =
+      includeUnknownStr === '1' || includeUnknownStr === 'true';
+    const withCounts = withCountsStr === '1' || withCountsStr === 'true';
+    const withLastSeen = withLastSeenStr === '1' || withLastSeenStr === 'true';
+    return this.reporting.listReportingSources({
+      search,
+      includeUnknown,
+      withCounts,
+      withLastSeen,
+    });
+  }
 
   @Get('reporting/leads-received')
   async getLeadsReceived(
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('tz') _tz?: string,
+    @Query('sourcesCsv') sourcesCsv?: string,
+    @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
   ) {
-    return this.reporting.leadsReceived(from, to);
+    return this.reporting.leadsReceived(
+      from,
+      to,
+      sourcesCsv,
+      sourcesExcludeCsv,
+    );
   }
 
   // ✅ corriger le chemin + utiliser this.reporting
@@ -75,8 +102,15 @@ async getSummary(
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('tz') _tz?: string,
+    @Query('sourcesCsv') sourcesCsv?: string,
+    @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
   ) {
-    return this.reporting.spotlightSetters(from, to);
+    return this.reporting.spotlightSetters(
+      from,
+      to,
+      sourcesCsv,
+      sourcesExcludeCsv,
+    );
   }
 
   // ✅ corriger le chemin + utiliser this.reporting
@@ -85,70 +119,119 @@ async getSummary(
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('tz') _tz?: string,
+    @Query('sourcesCsv') sourcesCsv?: string,
+    @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
   ) {
-    return this.reporting.spotlightClosers(from, to);
+    return this.reporting.spotlightClosers(
+      from,
+      to,
+      sourcesCsv,
+      sourcesExcludeCsv,
+    );
   }
 
   // ===== EXPORTS SPOTLIGHT =====
-@Get('reporting/export/spotlight-setters.csv')
-async exportSpotlightSettersCsv(
-  @Query('from') from?: string,
-  @Query('to') to?: string,
-  @Query('tz') _tz?: string,
-  @Res() res?: any,
-) {
-  const buf = await this.reporting.exportSpotlightSettersCSV({ from, to });
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="spotlight_setters_${from || 'from'}_${to || 'to'}.csv"`);
-  return res.send(buf);
-}
+  @Get('reporting/export/spotlight-setters.csv')
+  async exportSpotlightSettersCsv(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('tz') _tz?: string,
+    @Query('sourcesCsv') sourcesCsv?: string,
+    @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
+    @Res() res?: any,
+  ) {
+    const buf = await this.reporting.exportSpotlightSettersCSV({
+      from,
+      to,
+      sourcesCsv,
+      sourcesExcludeCsv,
+    });
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="spotlight_setters_${from || 'from'}_${to || 'to'}.csv"`,
+    );
+    return res.send(buf);
+  }
 
-@Get('reporting/export/spotlight-closers.csv')
-async exportSpotlightClosersCsv(
-  @Query('from') from?: string,
-  @Query('to') to?: string,
-  @Query('tz') _tz?: string,
-  @Res() res?: any,
-) {
-  const buf = await this.reporting.exportSpotlightClosersCSV({ from, to });
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="spotlight_closers_${from || 'from'}_${to || 'to'}.csv"`);
-  return res.send(buf);
-}
+  @Get('reporting/export/spotlight-closers.csv')
+  async exportSpotlightClosersCsv(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('tz') _tz?: string,
+    @Query('sourcesCsv') sourcesCsv?: string,
+    @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
+    @Res() res?: any,
+  ) {
+    const buf = await this.reporting.exportSpotlightClosersCSV({
+      from,
+      to,
+      sourcesCsv,
+      sourcesExcludeCsv,
+    });
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="spotlight_closers_${from || 'from'}_${to || 'to'}.csv"`,
+    );
+    return res.send(buf);
+  }
 
-@Get('reporting/export/spotlight-setters.pdf')
-async exportSpotlightSettersPdf(
-  @Query('from') from?: string,
-  @Query('to') to?: string,
-  @Query('tz') _tz?: string,
-  @Res() res?: any,
-) {
-  const buf = await this.reporting.exportSpotlightSettersPDF({ from, to });
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="spotlight_setters_${from || 'from'}_${to || 'to'}.pdf"`);
-  return res.send(buf);
-}
+  @Get('reporting/export/spotlight-setters.pdf')
+  async exportSpotlightSettersPdf(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('tz') _tz?: string,
+    @Query('sourcesCsv') sourcesCsv?: string,
+    @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
+    @Res() res?: any,
+  ) {
+    const buf = await this.reporting.exportSpotlightSettersPDF({
+      from,
+      to,
+      sourcesCsv,
+      sourcesExcludeCsv,
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="spotlight_setters_${from || 'from'}_${to || 'to'}.pdf"`,
+    );
+    return res.send(buf);
+  }
 
-@Get('reporting/export/spotlight-closers.pdf')
-async exportSpotlightClosersPdf(
-  @Query('from') from?: string,
-  @Query('to') to?: string,
-  @Query('tz') _tz?: string,
-  @Res() res?: any,
-) {
-  const buf = await this.reporting.exportSpotlightClosersPDF({ from, to });
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="spotlight_closers_${from || 'from'}_${to || 'to'}.pdf"`);
-  return res.send(buf);
-}
+  @Get('reporting/export/spotlight-closers.pdf')
+  async exportSpotlightClosersPdf(
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('tz') _tz?: string,
+    @Query('sourcesCsv') sourcesCsv?: string,
+    @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
+    @Res() res?: any,
+  ) {
+    const buf = await this.reporting.exportSpotlightClosersPDF({
+      from,
+      to,
+      sourcesCsv,
+      sourcesExcludeCsv,
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="spotlight_closers_${from || 'from'}_${to || 'to'}.pdf"`,
+    );
+    return res.send(buf);
+  }
 
   @Get('reporting/sales-weekly')
   async getSalesWeekly(
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('tz') _tz?: string,
+    @Query('sourcesCsv') sourcesCsv?: string,
+    @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
   ) {
-    return this.reporting.salesWeekly(from, to);
+    return this.reporting.salesWeekly(from, to, sourcesCsv, sourcesExcludeCsv);
   }
 
   @Get('reporting/setters')
@@ -156,8 +239,15 @@ async exportSpotlightClosersPdf(
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('tz') _tz?: string,
+    @Query('sourcesCsv') sourcesCsv?: string,
+    @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
   ) {
-    return this.reporting.settersReport(from, to);
+    return this.reporting.settersReport(
+      from,
+      to,
+      sourcesCsv,
+      sourcesExcludeCsv,
+    );
   }
 
   @Get('reporting/closers')
@@ -165,8 +255,15 @@ async exportSpotlightClosersPdf(
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('tz') _tz?: string,
+    @Query('sourcesCsv') sourcesCsv?: string,
+    @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
   ) {
-    return this.reporting.closersReport(from, to);
+    return this.reporting.closersReport(
+      from,
+      to,
+      sourcesCsv,
+      sourcesExcludeCsv,
+    );
   }
 
   @Get('reporting/duos')
@@ -174,8 +271,10 @@ async exportSpotlightClosersPdf(
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('tz') _tz?: string,
+    @Query('sourcesCsv') sourcesCsv?: string,
+    @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
   ) {
-    return this.reporting.duosReport(from, to);
+    return this.reporting.duosReport(from, to, sourcesCsv, sourcesExcludeCsv);
   }
 
   @Get('reporting/weekly-ops')
@@ -183,8 +282,15 @@ async exportSpotlightClosersPdf(
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('tz') _tz?: string,
+    @Query('sourcesCsv') sourcesCsv?: string,
+    @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
   ) {
-    const rows = await this.reporting.weeklySeries(from, to);
+    const rows = await this.reporting.weeklySeries(
+      from,
+      to,
+      sourcesCsv,
+      sourcesExcludeCsv,
+    );
     return { ok: true as const, rows };
   }
 
@@ -193,8 +299,10 @@ async exportSpotlightClosersPdf(
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('tz') _tz?: string,
+    @Query('sourcesCsv') sourcesCsv?: string,
+    @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
   ) {
-    return this.reporting.funnel(from, to);
+    return this.reporting.funnel(from, to, sourcesCsv, sourcesExcludeCsv);
   }
 
   @Get('reporting/pipeline-metrics')
@@ -204,12 +312,21 @@ async exportSpotlightClosersPdf(
     @Query('to') to?: string,
     @Query('mode') mode?: 'entered' | 'current',
     @Query('tz') _tz?: string,
+    @Query('sourcesCsv') sourcesCsv?: string,
+    @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
   ) {
     const list = (keys || '')
       .split(',')
       .map((k) => k.trim())
       .filter(Boolean);
-    return this.reporting.pipelineMetrics({ keys: list, from, to, mode });
+    return this.reporting.pipelineMetrics({
+      keys: list,
+      from,
+      to,
+      mode,
+      sourcesCsv,
+      sourcesExcludeCsv,
+    });
   }
 
   /* --------- DRILLS --------- */
@@ -219,9 +336,17 @@ async exportSpotlightClosersPdf(
     @Query('to') to?: string,
     @Query('limit') limitStr?: string,
     @Query('tz') _tz?: string,
+    @Query('sourcesCsv') sourcesCsv?: string,
+    @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
   ) {
     const limit = Number(limitStr ?? 2000);
-    return this.reporting.drillLeadsReceived({ from, to, limit });
+    return this.reporting.drillLeadsReceived({
+      from,
+      to,
+      limit,
+      sourcesCsv,
+      sourcesExcludeCsv,
+    });
   }
 
   @Get('reporting/drill/won')
@@ -230,9 +355,17 @@ async exportSpotlightClosersPdf(
     @Query('to') to?: string,
     @Query('limit') limitStr?: string,
     @Query('tz') _tz?: string,
+    @Query('sourcesCsv') sourcesCsv?: string,
+    @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
   ) {
     const limit = Number(limitStr ?? 2000);
-    return this.reporting.drillWon({ from, to, limit });
+    return this.reporting.drillWon({
+      from,
+      to,
+      limit,
+      sourcesCsv,
+      sourcesExcludeCsv,
+    });
   }
 
   @Get('reporting/drill/appointments')
@@ -240,13 +373,25 @@ async exportSpotlightClosersPdf(
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('type') type?: 'RV0' | 'RV1' | 'RV2',
-    @Query('status') status?: 'HONORED' | 'POSTPONED' | 'CANCELED' | 'NO_SHOW' | 'NOT_QUALIFIED',
+    @Query('status')
+    status?: 'HONORED' | 'POSTPONED' | 'CANCELED' | 'NO_SHOW' | 'NOT_QUALIFIED',
     @Query('userId') userId?: string,
     @Query('limit') limitStr?: string,
     @Query('tz') _tz?: string,
+    @Query('sourcesCsv') sourcesCsv?: string,
+    @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
   ) {
     const limit = Number(limitStr ?? 2000);
-    return this.reporting.drillAppointments({ from, to, type, status, userId, limit });
+    return this.reporting.drillAppointments({
+      from,
+      to,
+      type,
+      status,
+      userId,
+      limit,
+      sourcesCsv,
+      sourcesExcludeCsv,
+    });
   }
 
   @Get('reporting/drill/call-requests')
@@ -255,9 +400,17 @@ async exportSpotlightClosersPdf(
     @Query('to') to?: string,
     @Query('limit') limitStr?: string,
     @Query('tz') _tz?: string,
+    @Query('sourcesCsv') sourcesCsv?: string,
+    @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
   ) {
     const limit = Number(limitStr ?? 2000);
-    return this.reporting.drillCallRequests({ from, to, limit });
+    return this.reporting.drillCallRequests({
+      from,
+      to,
+      limit,
+      sourcesCsv,
+      sourcesExcludeCsv,
+    });
   }
 
   @Get('reporting/drill/calls')
@@ -268,11 +421,21 @@ async exportSpotlightClosersPdf(
     @Query('setterNoShow') setterNoShowStr?: string,
     @Query('limit') limitStr?: string,
     @Query('tz') _tz?: string,
+    @Query('sourcesCsv') sourcesCsv?: string,
+    @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
   ) {
     const answered = answeredStr === '1' || answeredStr === 'true';
     const setterNoShow = setterNoShowStr === '1' || setterNoShowStr === 'true';
     const limit = Number(limitStr ?? 2000);
-    return this.reporting.drillCalls({ from, to, answered, setterNoShow, limit });
+    return this.reporting.drillCalls({
+      from,
+      to,
+      answered,
+      setterNoShow,
+      limit,
+      sourcesCsv,
+      sourcesExcludeCsv,
+    });
   }
 
   /* --------- Bloc /metrics --------- */
@@ -282,9 +445,19 @@ async exportSpotlightClosersPdf(
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('tz') _tz?: string,
+    @Query('sourcesCsv') sourcesCsv?: string,
+    @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
   ) {
     if (!stage) return { total: 0, byDay: [] };
-    return this.reporting.stageSeries(stage, from, to);
+    const tz = _tz ?? 'Europe/Paris';
+    return this.reporting.stageSeries(
+      stage,
+      from,
+      to,
+      tz,
+      sourcesCsv,
+      sourcesExcludeCsv,
+    );
   }
 
   @Get('metrics/leads-by-day')
@@ -292,8 +465,15 @@ async exportSpotlightClosersPdf(
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('tz') _tz?: string,
+    @Query('sourcesCsv') sourcesCsv?: string,
+    @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
   ) {
-    return this.reporting.leadsReceived(from, to);
+    return this.reporting.leadsReceived(
+      from,
+      to,
+      sourcesCsv,
+      sourcesExcludeCsv,
+    );
   }
 
   @Get('reporting/metrics/canceled-daily')
@@ -301,10 +481,16 @@ async exportSpotlightClosersPdf(
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('tz') _tz?: string,
+    @Query('sourcesCsv') sourcesCsv?: string,
+    @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
   ) {
-    return this.reporting.canceledDaily(from, to);
+    const tz = _tz ?? 'Europe/Paris';
+    return this.reporting.canceledDaily(
+      from,
+      to,
+      tz,
+      sourcesCsv,
+      sourcesExcludeCsv,
+    );
   }
 }
-
-
-
