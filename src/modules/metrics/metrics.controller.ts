@@ -14,16 +14,6 @@ function parseDateOrThrow(label: string, value?: string): Date {
   return d;
 }
 
-function parseStageOrThrow(value?: string): LeadStage {
-  if (!value) {
-    throw new BadRequestException('Query param "stage" est requis');
-  }
-  if (!Object.values(LeadStage).includes(value as LeadStage)) {
-    throw new BadRequestException(`Query param "stage" invalide : "${value}"`);
-  }
-  return value as LeadStage;
-}
-
 @Controller('metrics')
 export class MetricsController {
   constructor(private readonly metrics: MetricsService) {}
@@ -92,27 +82,48 @@ export class MetricsController {
    *  - RV0 no-show par jour (RV0_NO_SHOW) ensuite agrégé par semaine
    */
   @Get('stage-series')
-   async getStageSeries(
+  async getStageSeries(
     @Query('stage') stageStr?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
-    @Query('sourcesCsv') sourcesCsv?: string,
-    @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
   ) {
-    const stage = parseStageOrThrow(stageStr);
+    if (!stageStr) {
+      throw new BadRequestException('Query param "stage" est requis');
+    }
+
     const start = parseDateOrThrow('from', from);
     const endDate = parseDateOrThrow('to', to);
 
     const endExclusive = new Date(endDate);
     endExclusive.setDate(endExclusive.getDate() + 1);
 
-    return this.metrics.stageSeriesByDay({
-      start,
-      end: endExclusive,
-      stage,
-      sourcesCsv,
-      sourcesExcludeCsv,
-    });
+    // ⚠️ On ne fait PAS de check strict sur l'enum ici.
+    // On caste simplement: si le stage ne correspond à rien en DB → total = 0.
+    const stage = stageStr as LeadStage;
+
+    return this.metrics.stageSeriesByDay({ start, end: endExclusive, stage });
   }
+
+  /**
+ * GET /metrics/canceled-by-day?from=YYYY-MM-DD&to=YYYY-MM-DD
+ *
+ * Retourne :
+ * {
+ *   total: number,
+ *   byDay: [
+ *     { day: "2025-11-01", RV0_CANCELED: 1, RV1_CANCELED: 2, RV2_CANCELED: 0, total: 3 },
+ *     ...
+ *   ]
+ * }
+ */
+@Get('canceled-by-day')
+async getCanceledByDay(@Query('from') from?: string, @Query('to') to?: string) {
+  const start = parseDateOrThrow('from', from);
+  const endDate = parseDateOrThrow('to', to);
+  const endExclusive = new Date(endDate);
+  endExclusive.setDate(endExclusive.getDate() + 1);
+
+  return this.metrics.canceledByDay({ start, end: endExclusive });
+}
 
 }
