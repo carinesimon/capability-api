@@ -14,6 +14,16 @@ function parseDateOrThrow(label: string, value?: string): Date {
   return d;
 }
 
+function parseStageOrThrow(value?: string): LeadStage {
+  if (!value) {
+    throw new BadRequestException('Query param "stage" est requis');
+  }
+  if (!Object.values(LeadStage).includes(value as LeadStage)) {
+    throw new BadRequestException(`Query param "stage" invalide : "${value}"`);
+  }
+  return value as LeadStage;
+}
+
 @Controller('metrics')
 export class MetricsController {
   constructor(private readonly metrics: MetricsService) {}
@@ -82,26 +92,27 @@ export class MetricsController {
    *  - RV0 no-show par jour (RV0_NO_SHOW) ensuite agrégé par semaine
    */
   @Get('stage-series')
-  async getStageSeries(
+   async getStageSeries(
     @Query('stage') stageStr?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('sourcesCsv') sourcesCsv?: string,
+    @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
   ) {
-    if (!stageStr) {
-      throw new BadRequestException('Query param "stage" est requis');
-    }
-
+    const stage = parseStageOrThrow(stageStr);
     const start = parseDateOrThrow('from', from);
     const endDate = parseDateOrThrow('to', to);
 
     const endExclusive = new Date(endDate);
     endExclusive.setDate(endExclusive.getDate() + 1);
 
-    // ⚠️ On ne fait PAS de check strict sur l'enum ici.
-    // On caste simplement: si le stage ne correspond à rien en DB → total = 0.
-    const stage = stageStr as LeadStage;
-
-    return this.metrics.stageSeriesByDay({ start, end: endExclusive, stage });
+    return this.metrics.stageSeriesByDay({
+      start,
+      end: endExclusive,
+      stage,
+      sourcesCsv,
+      sourcesExcludeCsv,
+    });
   }
 
 }
