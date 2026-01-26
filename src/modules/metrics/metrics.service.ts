@@ -1,7 +1,39 @@
 // backend/src/modules/metrics/metrics.service.ts
 import { Injectable } from '@nestjs/common';
+import { Prisma, LeadStage } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { LeadStage } from '@prisma/client';
+
+function parseCsv(value?: string): string[] {
+  if (!value) return [];
+  const unique = new Set(
+    value
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean),
+  );
+  return Array.from(unique);
+}
+
+function buildLeadSourceWhere(
+  sourcesCsv?: string,
+  sourcesExcludeCsv?: string,
+): Prisma.LeadWhereInput {
+  const includes = parseCsv(sourcesCsv);
+  const excludes = parseCsv(sourcesExcludeCsv);
+  const clauses: Prisma.LeadWhereInput[] = [];
+
+  if (includes.length) {
+    clauses.push({ source: { in: includes } });
+  }
+
+  if (excludes.length) {
+    clauses.push({ source: { notIn: excludes } });
+  }
+
+  if (!clauses.length) return {};
+  if (clauses.length === 1) return clauses[0];
+  return { AND: clauses };
+}
 
 /**
  * Sortie du funnel : un simple Record<string, number>
@@ -110,8 +142,14 @@ export class MetricsService {
    * Basé sur StageEvent (toStage), période [start, end)
    * → 1 event max par lead/stage (grâce au StageEvent.upsert)
    */
-  async stageSeriesByDay(params: { start: Date; end: Date; stage: LeadStage }) {
-    const { start, end, stage } = params;
+  async stageSeriesByDay(params: {
+    start: Date;
+    end: Date;
+    stage: LeadStage;
+    sourcesCsv?: string;
+    sourcesExcludeCsv?: string;
+  }) {
+    const { start, end, stage, sourcesCsv, sourcesExcludeCsv } = params;
 
     const events = await this.prisma.stageEvent.findMany({
       where: {
@@ -120,6 +158,7 @@ export class MetricsService {
           gte: start,
           lt: end,
         },
+        lead: buildLeadSourceWhere(sourcesCsv, sourcesExcludeCsv),
       },
       select: { occurredAt: true },
     });
@@ -141,6 +180,48 @@ export class MetricsService {
       total: events.length,
       byDay,
     };
-    
   }
+
+  /**
+ * Annulations par jour (pile RV0_CANCELED / RV1_CANCELED / RV2_CANCELED + total)
+ * Période [start, end)
+ */
+async canceledByDay(params: { start: Date; end: Date }) {
+  const { start, end } = params;
+
+  const events = await this.prisma.stageEvent.findMany({
+    where: {
+      toStage: { in: ['RV0_CANCELED', 'RV1_CANCELED', 'RV2_CANCELED'] as any },
+      occurredAt: { gte: start, lt: end },
+    },
+    select: { toStage: true, occurredAt: true },
+  });
+
+  // Pivot par jour
+  type Row = {
+    day: string;
+    RV0_CANCELED: number;
+    RV1_CANCELED: number;
+    RV2_CANCELED: number;
+    total: number;
+  };
+  const map = new Map<string, Row>();
+
+  for (const ev of events) {
+    const d = ev.occurredAt;
+    const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const row = map.get(day) ?? { day, RV0_CANCELED: 0, RV1_CANCELED: 0, RV2_CANCELED: 0, total: 0 };
+    if (ev.toStage === 'RV0_CANCELED') row.RV0_CANCELED += 1;
+    if (ev.toStage === 'RV1_CANCELED') row.RV1_CANCELED += 1;
+    if (ev.toStage === 'RV2_CANCELED') row.RV2_CANCELED += 1;
+    row.total = row.RV0_CANCELED + row.RV1_CANCELED + row.RV2_CANCELED;
+    map.set(day, row);
+  }
+
+  const byDay = Array.from(map.values()).sort((a,b) => a.day.localeCompare(b.day));
+  const total = byDay.reduce((s, r) => s + r.total, 0);
+
+  return { total, byDay };
+}
+
 }
