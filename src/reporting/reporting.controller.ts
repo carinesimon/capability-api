@@ -86,6 +86,11 @@ export class ReportingController {
     });
   }
 
+  @Get('tags')
+  async listTags() {
+    return this.reporting.listReportingTags();
+  }
+
   @Get('leads-received')
   async getLeadsReceived(
     @Query('from') from?: string,
@@ -500,3 +505,4 @@ export class ReportingController {
     );
   }
 }
+
