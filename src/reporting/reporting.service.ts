@@ -73,6 +73,11 @@ function normalizeSourceValue(value?: string | null): string | null {
   return trimmed ? trimmed : null;
 }
 
+function normalizeTagValue(value?: string | null): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
 /* ---------------- Dates helpers (UTC) ---------------- */
 function toUTCDateOnly(s?: string) {
   if (!s) return undefined;
@@ -1661,6 +1666,25 @@ export class ReportingService {
     }
 
     return sources;
+  }
+
+  async listReportingTags(): Promise<Array<{ tag: string }>> {
+    const rows = await this.prisma.lead.findMany({
+      where: {
+        tag: {
+          not: null,
+          notIn: [''],
+        },
+      },
+      distinct: ['tag'],
+      select: { tag: true },
+      orderBy: { tag: 'asc' },
+    });
+
+    return rows
+      .map((row) => normalizeTagValue(row.tag))
+      .filter(Boolean)
+      .map((tag) => ({ tag })) as Array<{ tag: string }>;
   }
 
   async filterOptions(): Promise<{
@@ -3898,3 +3922,4 @@ export class ReportingService {
     return { ok: true, count: items.length, items };
   }
 }
+
