@@ -38,6 +38,17 @@ export class MetricsController {
   constructor(private readonly metrics: MetricsService) {}
 
   /**
+   * GET /metrics/stages
+   *
+   * Retourne:
+   * { stages: string[] }
+   */
+  @Get('stages')
+  getStages() {
+    return { stages: Object.values(LeadStage) };
+  }
+
+  /**
    * GET /metrics/funnel?from=2025-10-01&to=2025-10-31
    *
    * Retourne un objet de la forme:
@@ -105,6 +116,10 @@ export class MetricsController {
     @Query('stage') stageStr?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('sourcesCsv') sourcesCsv?: string,
+    @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
+    @Query('setterIdsCsv') setterIdsCsv?: string,
+    @Query('closerIdsCsv') closerIdsCsv?: string,
   ) {
     const stage = parseLeadStageOrThrow(stageStr);
     const start = parseDateOrThrow('from', from);
@@ -113,7 +128,15 @@ export class MetricsController {
     const endExclusive = new Date(endDate);
     endExclusive.setDate(endExclusive.getDate() + 1);
 
-    return this.metrics.stageSeriesByDay({ start, end: endExclusive, stage });
+    return this.metrics.stageSeriesByDay({
+      start,
+      end: endExclusive,
+      stage,
+      sourcesCsv,
+      sourcesExcludeCsv,
+      setterIdsCsv,
+      closerIdsCsv,
+    });
   }
 
   /**
@@ -141,3 +164,4 @@ export class MetricsController {
     return this.metrics.canceledByDay({ start, end: endExclusive });
   }
 }
+
