@@ -35,6 +35,33 @@ function buildLeadSourceWhere(
   return { AND: clauses };
 }
 
+function buildLeadWhere(params: {
+  sourcesCsv?: string;
+  sourcesExcludeCsv?: string;
+  setterIdsCsv?: string;
+  closerIdsCsv?: string;
+}): Prisma.LeadWhereInput {
+  const clauses: Prisma.LeadWhereInput[] = [];
+  const sourceWhere = buildLeadSourceWhere(
+    params.sourcesCsv,
+    params.sourcesExcludeCsv,
+  );
+  if (Object.keys(sourceWhere).length) {
+    clauses.push(sourceWhere);
+  }
+  const setterIds = parseCsv(params.setterIdsCsv);
+  if (setterIds.length) {
+    clauses.push({ setterId: { in: setterIds } });
+  }
+  const closerIds = parseCsv(params.closerIdsCsv);
+  if (closerIds.length) {
+    clauses.push({ closerId: { in: closerIds } });
+  }
+  if (!clauses.length) return {};
+  if (clauses.length === 1) return clauses[0];
+  return { AND: clauses };
+}
+
 /**
  * Sortie du funnel : un simple Record<string, number>
  * ex: { LEADS_RECEIVED: 42, CALL_REQUESTED: 10, RV1_PLANNED: 5, ... }
@@ -148,8 +175,18 @@ export class MetricsService {
     stage: LeadStage;
     sourcesCsv?: string;
     sourcesExcludeCsv?: string;
+    setterIdsCsv?: string;
+    closerIdsCsv?: string;
   }) {
-    const { start, end, stage, sourcesCsv, sourcesExcludeCsv } = params;
+    const {
+      start,
+      end,
+      stage,
+      sourcesCsv,
+      sourcesExcludeCsv,
+      setterIdsCsv,
+      closerIdsCsv,
+    } = params;
 
     const events = await this.prisma.stageEvent.findMany({
       where: {
@@ -158,7 +195,12 @@ export class MetricsService {
           gte: start,
           lt: end,
         },
-        lead: buildLeadSourceWhere(sourcesCsv, sourcesExcludeCsv),
+        lead: buildLeadWhere({
+          sourcesCsv,
+          sourcesExcludeCsv,
+          setterIdsCsv,
+          closerIdsCsv,
+        }),
       },
       select: { occurredAt: true },
     });
@@ -225,3 +267,4 @@ async canceledByDay(params: { start: Date; end: Date }) {
 }
 
 }
+
