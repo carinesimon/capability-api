@@ -44,6 +44,16 @@ describe('MetricsController', () => {
       start: expectedStart,
       end: expectedEnd,
       stage: LeadStage.CALL_REQUESTED,
+      sourcesCsv: undefined,
+      sourcesExcludeCsv: undefined,
+      setterIdsCsv: undefined,
+      closerIdsCsv: undefined,
+    });
+  });
+
+  it('returns lead stages for metrics/stages', () => {
+    expect(controller.getStages()).toEqual({
+      stages: Object.values(LeadStage),
     });
   });
 });
