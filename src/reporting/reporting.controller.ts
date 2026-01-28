@@ -1,7 +1,42 @@
 // backend/src/modules/reporting/reporting.controller.ts
 // backend/src/modules/reporting/reporting.controller.ts
-import { Body, Controller, Get, Post, Query, Res } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Post,
+  Query,
+  Res,
+} from '@nestjs/common';
 import { ReportingService } from './reporting.service';
+
+function parseDateOnlyParam(label: string, value?: string): string | undefined {
+  if (!value) return undefined;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new BadRequestException(
+      `Query param "${label}" invalide : "${value}" (format attendu YYYY-MM-DD)`,
+    );
+  }
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.toISOString().slice(0, 10) !== value
+  ) {
+    throw new BadRequestException(
+      `Query param "${label}" invalide : "${value}" (format attendu YYYY-MM-DD)`,
+    );
+  }
+  return value;
+}
+
+function validateLeadCreatedRange(
+  leadCreatedFrom?: string,
+  leadCreatedTo?: string,
+) {
+  parseDateOnlyParam('leadCreatedFrom', leadCreatedFrom);
+  parseDateOnlyParam('leadCreatedTo', leadCreatedTo);
+}
 @Controller('reporting')
 export class ReportingController {
   constructor(private readonly reporting: ReportingService) {}
@@ -14,12 +49,29 @@ export class ReportingController {
     @Query('tz') _tz?: string,
     @Query('sourcesCsv') sourcesCsv?: string,
     @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
+    @Query('tagsCsv') tagsCsv?: string,
+    @Query('leadCreatedFrom') leadCreatedFrom?: string,
+    @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
-    return this.reporting.summary(from, to, sourcesCsv, sourcesExcludeCsv);
+    validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
+    return this.reporting.summary(
+      from,
+      to,
+      sourcesCsv,
+      sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
+    );
   }
 
   @Get('filter-options')
-  async getFilterOptions() {
+  async getFilterOptions(
+    @Query('tagsCsv') _tagsCsv?: string,
+    @Query('leadCreatedFrom') leadCreatedFrom?: string,
+    @Query('leadCreatedTo') leadCreatedTo?: string,
+  ) {
+    validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
     return this.reporting.filterOptions();
   }
 
@@ -73,7 +125,11 @@ export class ReportingController {
     @Query('includeUnknown') includeUnknownStr?: string,
     @Query('withCounts') withCountsStr?: string,
     @Query('withLastSeen') withLastSeenStr?: string,
+    @Query('tagsCsv') _tagsCsv?: string,
+    @Query('leadCreatedFrom') leadCreatedFrom?: string,
+    @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
+    validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
     const includeUnknown =
       includeUnknownStr === '1' || includeUnknownStr === 'true';
     const withCounts = withCountsStr === '1' || withCountsStr === 'true';
@@ -87,7 +143,12 @@ export class ReportingController {
   }
 
   @Get('tags')
-  async listTags() {
+  async listTags(
+    @Query('tagsCsv') _tagsCsv?: string,
+    @Query('leadCreatedFrom') leadCreatedFrom?: string,
+    @Query('leadCreatedTo') leadCreatedTo?: string,
+  ) {
+    validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
     return this.reporting.listReportingTags();
   }
 
@@ -98,12 +159,19 @@ export class ReportingController {
     @Query('tz') _tz?: string,
     @Query('sourcesCsv') sourcesCsv?: string,
     @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
+    @Query('tagsCsv') tagsCsv?: string,
+    @Query('leadCreatedFrom') leadCreatedFrom?: string,
+    @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
+    validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
     return this.reporting.leadsReceived(
       from,
       to,
       sourcesCsv,
       sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
     );
   }
 
@@ -115,12 +183,19 @@ export class ReportingController {
     @Query('tz') _tz?: string,
     @Query('sourcesCsv') sourcesCsv?: string,
     @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
+    @Query('tagsCsv') tagsCsv?: string,
+    @Query('leadCreatedFrom') leadCreatedFrom?: string,
+    @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
+    validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
     return this.reporting.spotlightSetters(
       from,
       to,
       sourcesCsv,
       sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
     );
   }
 
@@ -132,12 +207,19 @@ export class ReportingController {
     @Query('tz') _tz?: string,
     @Query('sourcesCsv') sourcesCsv?: string,
     @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
+    @Query('tagsCsv') tagsCsv?: string,
+    @Query('leadCreatedFrom') leadCreatedFrom?: string,
+    @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
+    validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
     return this.reporting.spotlightClosers(
       from,
       to,
       sourcesCsv,
       sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
     );
   }
 
@@ -149,13 +231,20 @@ export class ReportingController {
     @Query('tz') _tz?: string,
     @Query('sourcesCsv') sourcesCsv?: string,
     @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
+    @Query('tagsCsv') tagsCsv?: string,
+    @Query('leadCreatedFrom') leadCreatedFrom?: string,
+    @Query('leadCreatedTo') leadCreatedTo?: string,
     @Res() res?: any,
   ) {
+    validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
     const buf = await this.reporting.exportSpotlightSettersCSV({
       from,
       to,
       sourcesCsv,
       sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
     });
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader(
@@ -172,13 +261,20 @@ export class ReportingController {
     @Query('tz') _tz?: string,
     @Query('sourcesCsv') sourcesCsv?: string,
     @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
+    @Query('tagsCsv') tagsCsv?: string,
+    @Query('leadCreatedFrom') leadCreatedFrom?: string,
+    @Query('leadCreatedTo') leadCreatedTo?: string,
     @Res() res?: any,
   ) {
+    validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
     const buf = await this.reporting.exportSpotlightClosersCSV({
       from,
       to,
       sourcesCsv,
       sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
     });
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader(
@@ -195,13 +291,20 @@ export class ReportingController {
     @Query('tz') _tz?: string,
     @Query('sourcesCsv') sourcesCsv?: string,
     @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
+    @Query('tagsCsv') tagsCsv?: string,
+    @Query('leadCreatedFrom') leadCreatedFrom?: string,
+    @Query('leadCreatedTo') leadCreatedTo?: string,
     @Res() res?: any,
   ) {
+    validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
     const buf = await this.reporting.exportSpotlightSettersPDF({
       from,
       to,
       sourcesCsv,
       sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
     });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
@@ -218,13 +321,20 @@ export class ReportingController {
     @Query('tz') _tz?: string,
     @Query('sourcesCsv') sourcesCsv?: string,
     @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
+    @Query('tagsCsv') tagsCsv?: string,
+    @Query('leadCreatedFrom') leadCreatedFrom?: string,
+    @Query('leadCreatedTo') leadCreatedTo?: string,
     @Res() res?: any,
   ) {
+    validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
     const buf = await this.reporting.exportSpotlightClosersPDF({
       from,
       to,
       sourcesCsv,
       sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
     });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
@@ -241,8 +351,20 @@ export class ReportingController {
     @Query('tz') _tz?: string,
     @Query('sourcesCsv') sourcesCsv?: string,
     @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
+    @Query('tagsCsv') tagsCsv?: string,
+    @Query('leadCreatedFrom') leadCreatedFrom?: string,
+    @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
-    return this.reporting.salesWeekly(from, to, sourcesCsv, sourcesExcludeCsv);
+    validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
+    return this.reporting.salesWeekly(
+      from,
+      to,
+      sourcesCsv,
+      sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
+    );
   }
 
   @Get('setters')
@@ -252,12 +374,19 @@ export class ReportingController {
     @Query('tz') _tz?: string,
     @Query('sourcesCsv') sourcesCsv?: string,
     @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
+    @Query('tagsCsv') tagsCsv?: string,
+    @Query('leadCreatedFrom') leadCreatedFrom?: string,
+    @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
+    validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
     return this.reporting.settersReport(
       from,
       to,
       sourcesCsv,
       sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
     );
   }
 
@@ -268,12 +397,19 @@ export class ReportingController {
     @Query('tz') _tz?: string,
     @Query('sourcesCsv') sourcesCsv?: string,
     @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
+    @Query('tagsCsv') tagsCsv?: string,
+    @Query('leadCreatedFrom') leadCreatedFrom?: string,
+    @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
+    validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
     return this.reporting.closersReport(
       from,
       to,
       sourcesCsv,
       sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
     );
   }
 
@@ -284,8 +420,20 @@ export class ReportingController {
     @Query('tz') _tz?: string,
     @Query('sourcesCsv') sourcesCsv?: string,
     @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
+    @Query('tagsCsv') tagsCsv?: string,
+    @Query('leadCreatedFrom') leadCreatedFrom?: string,
+    @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
-    return this.reporting.duosReport(from, to, sourcesCsv, sourcesExcludeCsv);
+    validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
+    return this.reporting.duosReport(
+      from,
+      to,
+      sourcesCsv,
+      sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
+    );
   }
 
   @Get('weekly-ops')
@@ -295,12 +443,19 @@ export class ReportingController {
     @Query('tz') _tz?: string,
     @Query('sourcesCsv') sourcesCsv?: string,
     @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
+    @Query('tagsCsv') tagsCsv?: string,
+    @Query('leadCreatedFrom') leadCreatedFrom?: string,
+    @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
+    validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
     const rows = await this.reporting.weeklySeries(
       from,
       to,
       sourcesCsv,
       sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
     );
     return { ok: true as const, rows };
   }
@@ -312,8 +467,20 @@ export class ReportingController {
     @Query('tz') _tz?: string,
     @Query('sourcesCsv') sourcesCsv?: string,
     @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
+    @Query('tagsCsv') tagsCsv?: string,
+    @Query('leadCreatedFrom') leadCreatedFrom?: string,
+    @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
-    return this.reporting.funnel(from, to, sourcesCsv, sourcesExcludeCsv);
+    validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
+    return this.reporting.funnel(
+      from,
+      to,
+      sourcesCsv,
+      sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
+    );
   }
 
   @Get('pipeline-metrics')
@@ -325,7 +492,11 @@ export class ReportingController {
     @Query('tz') _tz?: string,
     @Query('sourcesCsv') sourcesCsv?: string,
     @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
+    @Query('tagsCsv') tagsCsv?: string,
+    @Query('leadCreatedFrom') leadCreatedFrom?: string,
+    @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
+    validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
     const list = (keys || '')
       .split(',')
       .map((k) => k.trim())
@@ -337,6 +508,9 @@ export class ReportingController {
       mode,
       sourcesCsv,
       sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
     });
   }
 
@@ -349,7 +523,11 @@ export class ReportingController {
     @Query('tz') _tz?: string,
     @Query('sourcesCsv') sourcesCsv?: string,
     @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
+    @Query('tagsCsv') tagsCsv?: string,
+    @Query('leadCreatedFrom') leadCreatedFrom?: string,
+    @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
+    validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
     const limit = Number(limitStr ?? 2000);
     return this.reporting.drillLeadsReceived({
       from,
@@ -357,6 +535,9 @@ export class ReportingController {
       limit,
       sourcesCsv,
       sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
     });
   }
 
@@ -368,7 +549,11 @@ export class ReportingController {
     @Query('tz') _tz?: string,
     @Query('sourcesCsv') sourcesCsv?: string,
     @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
+    @Query('tagsCsv') tagsCsv?: string,
+    @Query('leadCreatedFrom') leadCreatedFrom?: string,
+    @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
+    validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
     const limit = Number(limitStr ?? 2000);
     return this.reporting.drillWon({
       from,
@@ -376,6 +561,9 @@ export class ReportingController {
       limit,
       sourcesCsv,
       sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
     });
   }
 
@@ -391,7 +579,11 @@ export class ReportingController {
     @Query('tz') _tz?: string,
     @Query('sourcesCsv') sourcesCsv?: string,
     @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
+    @Query('tagsCsv') tagsCsv?: string,
+    @Query('leadCreatedFrom') leadCreatedFrom?: string,
+    @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
+    validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
     const limit = Number(limitStr ?? 2000);
     return this.reporting.drillAppointments({
       from,
@@ -402,6 +594,9 @@ export class ReportingController {
       limit,
       sourcesCsv,
       sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
     });
   }
 
@@ -413,7 +608,11 @@ export class ReportingController {
     @Query('tz') _tz?: string,
     @Query('sourcesCsv') sourcesCsv?: string,
     @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
+    @Query('tagsCsv') tagsCsv?: string,
+    @Query('leadCreatedFrom') leadCreatedFrom?: string,
+    @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
+    validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
     const limit = Number(limitStr ?? 2000);
     return this.reporting.drillCallRequests({
       from,
@@ -421,6 +620,9 @@ export class ReportingController {
       limit,
       sourcesCsv,
       sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
     });
   }
 
@@ -434,7 +636,11 @@ export class ReportingController {
     @Query('tz') _tz?: string,
     @Query('sourcesCsv') sourcesCsv?: string,
     @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
+    @Query('tagsCsv') tagsCsv?: string,
+    @Query('leadCreatedFrom') leadCreatedFrom?: string,
+    @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
+    validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
     const answered = answeredStr === '1' || answeredStr === 'true';
     const setterNoShow = setterNoShowStr === '1' || setterNoShowStr === 'true';
     const limit = Number(limitStr ?? 2000);
@@ -446,6 +652,9 @@ export class ReportingController {
       limit,
       sourcesCsv,
       sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
     });
   }
 
@@ -458,7 +667,11 @@ export class ReportingController {
     @Query('tz') _tz?: string,
     @Query('sourcesCsv') sourcesCsv?: string,
     @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
+    @Query('tagsCsv') tagsCsv?: string,
+    @Query('leadCreatedFrom') leadCreatedFrom?: string,
+    @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
+    validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
     if (!stage) return { total: 0, byDay: [] };
     const tz = _tz ?? 'Europe/Paris';
     return this.reporting.stageSeries(
@@ -468,6 +681,9 @@ export class ReportingController {
       tz,
       sourcesCsv,
       sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
     );
   }
 
@@ -478,12 +694,19 @@ export class ReportingController {
     @Query('tz') _tz?: string,
     @Query('sourcesCsv') sourcesCsv?: string,
     @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
+    @Query('tagsCsv') tagsCsv?: string,
+    @Query('leadCreatedFrom') leadCreatedFrom?: string,
+    @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
+    validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
     return this.reporting.leadsReceived(
       from,
       to,
       sourcesCsv,
       sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
     );
   }
 
@@ -494,7 +717,11 @@ export class ReportingController {
     @Query('tz') _tz?: string,
     @Query('sourcesCsv') sourcesCsv?: string,
     @Query('sourcesExcludeCsv') sourcesExcludeCsv?: string,
+    @Query('tagsCsv') tagsCsv?: string,
+    @Query('leadCreatedFrom') leadCreatedFrom?: string,
+    @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
+    validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
     const tz = _tz ?? 'Europe/Paris';
     return this.reporting.canceledDaily(
       from,
@@ -502,7 +729,9 @@ export class ReportingController {
       tz,
       sourcesCsv,
       sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
     );
   }
 }
-
