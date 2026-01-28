@@ -48,6 +48,9 @@ describe('MetricsController', () => {
       sourcesExcludeCsv: undefined,
       setterIdsCsv: undefined,
       closerIdsCsv: undefined,
+      tagsCsv: undefined,
+      leadCreatedFrom: undefined,
+      leadCreatedTo: undefined,
     });
   });
 
