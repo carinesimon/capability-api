@@ -19,6 +19,9 @@ type RangeArgs = { from?: string; to?: string };
 type RangeSourcesArgs = RangeArgs & {
   sourcesCsv?: string;
   sourcesExcludeCsv?: string;
+  tagsCsv?: string;
+  leadCreatedFrom?: string;
+  leadCreatedTo?: string;
 };
 type ReportingSourcesArgs = {
   search?: string;
@@ -104,7 +107,48 @@ type LeadFilterCsvParams = {
   sourcesExcludeCsv?: string;
   setterIdsCsv?: string;
   closerIdsCsv?: string;
+  tagsCsv?: string;
+  leadCreatedFrom?: string;
+  leadCreatedTo?: string;
 };
+
+function buildLeadCreatedAtWhere(
+  leadCreatedFrom?: string,
+  leadCreatedTo?: string,
+): Prisma.LeadWhereInput {
+  const from = startOfDayUTC(leadCreatedFrom);
+  const to = endOfDayUTC(leadCreatedTo);
+  if (!from && !to) return {};
+  return { createdAt: { gte: from ?? undefined, lte: to ?? undefined } };
+}
+
+function buildLeadWhere(params: LeadFilterCsvParams): Prisma.LeadWhereInput {
+  const clauses: Prisma.LeadWhereInput[] = [];
+  const sourceWhere = buildLeadSourceWhere(
+    params.sourcesCsv,
+    params.sourcesExcludeCsv,
+  );
+  if (Object.keys(sourceWhere).length) clauses.push(sourceWhere);
+
+  const setterIds = parseCsvParam(params.setterIdsCsv);
+  if (setterIds.length) clauses.push({ setterId: { in: setterIds } });
+
+  const closerIds = parseCsvParam(params.closerIdsCsv);
+  if (closerIds.length) clauses.push({ closerId: { in: closerIds } });
+
+  const tags = parseCsv(params.tagsCsv);
+  if (tags.length) clauses.push({ tag: { in: tags } });
+
+  const createdWhere = buildLeadCreatedAtWhere(
+    params.leadCreatedFrom,
+    params.leadCreatedTo,
+  );
+  if (Object.keys(createdWhere).length) clauses.push(createdWhere);
+
+  if (!clauses.length) return {};
+  if (clauses.length === 1) return clauses[0];
+  return { AND: clauses };
+}
 
 function buildLeadWhereBase(
   params: LeadFilterCsvParams & { alias?: string },
@@ -115,6 +159,9 @@ function buildLeadWhereBase(
   const excludeList = parseCsv(params.sourcesExcludeCsv);
   const setterIds = parseCsvParam(params.setterIdsCsv);
   const closerIds = parseCsvParam(params.closerIdsCsv);
+  const tags = parseCsv(params.tagsCsv);
+  const createdFrom = startOfDayUTC(params.leadCreatedFrom);
+  const createdTo = endOfDayUTC(params.leadCreatedTo);
 
   if (sourceList.length) {
     clauses.push(
@@ -134,6 +181,21 @@ function buildLeadWhereBase(
   if (closerIds.length) {
     clauses.push(
       Prisma.sql`${Prisma.raw(`${alias}."closerId"`)} IN (${Prisma.join(closerIds)})`,
+    );
+  }
+  if (tags.length) {
+    clauses.push(
+      Prisma.sql`${Prisma.raw(`${alias}."tag"`)} IN (${Prisma.join(tags)})`,
+    );
+  }
+  if (createdFrom) {
+    clauses.push(
+      Prisma.sql`${Prisma.raw(`${alias}."createdAt"`)} >= ${createdFrom}`,
+    );
+  }
+  if (createdTo) {
+    clauses.push(
+      Prisma.sql`${Prisma.raw(`${alias}."createdAt"`)} <= ${createdTo}`,
     );
   }
 
@@ -158,12 +220,18 @@ function buildStageEventWhereBase(params: {
 function buildLeadSourceSql(params: {
   sourcesCsv?: string;
   sourcesExcludeCsv?: string;
+  tagsCsv?: string;
+  leadCreatedFrom?: string;
+  leadCreatedTo?: string;
   includeUnknown?: boolean;
   alias?: string;
 }): Prisma.Sql {
   const alias = params.alias ?? 'l';
   const includes = parseCsv(params.sourcesCsv);
   const excludes = parseCsv(params.sourcesExcludeCsv);
+  const tags = parseCsv(params.tagsCsv);
+  const createdFrom = startOfDayUTC(params.leadCreatedFrom);
+  const createdTo = endOfDayUTC(params.leadCreatedTo);
   const clauses: Prisma.Sql[] = [];
 
   if (includes.length) {
@@ -178,6 +246,24 @@ function buildLeadSourceSql(params: {
       ? Prisma.sql`(${Prisma.raw(`${alias}."source"`)} IS NULL OR ${Prisma.raw(`${alias}."source"`)} NOT IN (${Prisma.join(excludes)}))`
       : Prisma.sql`${Prisma.raw(`${alias}."source"`)} NOT IN (${Prisma.join(excludes)})`;
     clauses.push(excludeClause);
+  }
+
+  if (tags.length) {
+    clauses.push(
+      Prisma.sql`${Prisma.raw(`${alias}."tag"`)} IN (${Prisma.join(tags)})`,
+    );
+  }
+
+  if (createdFrom) {
+    clauses.push(
+      Prisma.sql`${Prisma.raw(`${alias}."createdAt"`)} >= ${createdFrom}`,
+    );
+  }
+
+  if (createdTo) {
+    clauses.push(
+      Prisma.sql`${Prisma.raw(`${alias}."createdAt"`)} <= ${createdTo}`,
+    );
   }
 
   return clauses.length
@@ -782,6 +868,9 @@ export class ReportingService {
     distinctByLead?: boolean;
     sourcesCsv?: string;
     sourcesExcludeCsv?: string;
+    tagsCsv?: string;
+    leadCreatedFrom?: string;
+    leadCreatedTo?: string;
   }): Promise<number> {
     const { stages, r, by, distinctByLead } = args;
     if (!stages?.length) return 0;
@@ -802,6 +891,9 @@ export class ReportingService {
     const leadSourceSql = buildLeadSourceSql({
       sourcesCsv: args.sourcesCsv,
       sourcesExcludeCsv: args.sourcesExcludeCsv,
+      tagsCsv: args.tagsCsv,
+      leadCreatedFrom: args.leadCreatedFrom,
+      leadCreatedTo: args.leadCreatedTo,
     });
     const stageList = Prisma.join(
       stages.map((s) => Prisma.sql`${s}::"LeadStage"`),
@@ -829,6 +921,9 @@ export class ReportingService {
     r: Range;
     sourcesCsv?: string;
     sourcesExcludeCsv?: string;
+    tagsCsv?: string;
+    leadCreatedFrom?: string;
+    leadCreatedTo?: string;
   }): Promise<Map<string, number>> {
     const { stages, r } = args;
     if (!stages?.length) return new Map();
@@ -836,6 +931,9 @@ export class ReportingService {
     const leadSourceSql = buildLeadSourceSql({
       sourcesCsv: args.sourcesCsv,
       sourcesExcludeCsv: args.sourcesExcludeCsv,
+      tagsCsv: args.tagsCsv,
+      leadCreatedFrom: args.leadCreatedFrom,
+      leadCreatedTo: args.leadCreatedTo,
     });
     const stageList = Prisma.join(
       stages.map((s) => Prisma.sql`${s}::"LeadStage"`),
@@ -891,12 +989,18 @@ export class ReportingService {
     to,
     sourcesCsv,
     sourcesExcludeCsv,
+    tagsCsv,
+    leadCreatedFrom,
+    leadCreatedTo,
   }: RangeSourcesArgs): Promise<Buffer> {
     const rows = await this.spotlightSetters(
       from,
       to,
       sourcesCsv,
       sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
     ); // ← tes données existantes
     const csv = new Json2Csv({
       fields: [
@@ -945,12 +1049,18 @@ export class ReportingService {
     to,
     sourcesCsv,
     sourcesExcludeCsv,
+    tagsCsv,
+    leadCreatedFrom,
+    leadCreatedTo,
   }: RangeSourcesArgs): Promise<Buffer> {
     const rows = await this.spotlightClosers(
       from,
       to,
       sourcesCsv,
       sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
     );
     const csv = new Json2Csv({
       fields: [
@@ -1180,10 +1290,20 @@ export class ReportingService {
     to,
     sourcesCsv,
     sourcesExcludeCsv,
+    tagsCsv,
+    leadCreatedFrom,
+    leadCreatedTo,
   }: RangeSourcesArgs): Promise<Buffer> {
     const rows =
-      (await this.spotlightSetters(from, to, sourcesCsv, sourcesExcludeCsv)) ||
-      [];
+      (await this.spotlightSetters(
+        from,
+        to,
+        sourcesCsv,
+        sourcesExcludeCsv,
+        tagsCsv,
+        leadCreatedFrom,
+        leadCreatedTo,
+      )) || [];
 
     // Agrégats pour l'intro d’analyse
     const totalLeads = rows.reduce(
@@ -1315,10 +1435,20 @@ export class ReportingService {
     to,
     sourcesCsv,
     sourcesExcludeCsv,
+    tagsCsv,
+    leadCreatedFrom,
+    leadCreatedTo,
   }: RangeSourcesArgs): Promise<Buffer> {
     const rows =
-      (await this.spotlightClosers(from, to, sourcesCsv, sourcesExcludeCsv)) ||
-      [];
+      (await this.spotlightClosers(
+        from,
+        to,
+        sourcesCsv,
+        sourcesExcludeCsv,
+        tagsCsv,
+        leadCreatedFrom,
+        leadCreatedTo,
+      )) || [];
 
     const totalP = rows.reduce(
       (s: number, r: any) => s + (Number(r.rv1Planned) || 0),
@@ -1595,7 +1725,7 @@ export class ReportingService {
       .sort((a, b) => a.localeCompare(b));
   }
 
-    async listReportingSources(args: ReportingSourcesArgs) {
+  async listReportingSources(args: ReportingSourcesArgs) {
     const search = args.search?.trim();
     const withCounts = args.withCounts ?? false;
     const withLastSeen = args.withLastSeen ?? false;
@@ -1768,14 +1898,23 @@ export class ReportingService {
     to?: string,
     sourcesCsv?: string,
     sourcesExcludeCsv?: string,
+    tagsCsv?: string,
+    leadCreatedFrom?: string,
+    leadCreatedTo?: string,
   ): Promise<LeadsReceivedOut> {
     const r = toRange(from, to);
-    const sourceFilter = buildLeadSourceWhere(sourcesCsv, sourcesExcludeCsv);
+    const leadFilter = buildLeadWhere({
+      sourcesCsv,
+      sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
+    });
 
     const total = await this.prisma.lead.count({
       where: {
         ...between('createdAt', r),
-        ...sourceFilter,
+        ...leadFilter,
       },
     });
 
@@ -1795,7 +1934,7 @@ export class ReportingService {
         const count = await this.prisma.lead.count({
           where: {
             createdAt: { gte: d0, lte: d1 },
-            ...sourceFilter,
+            ...leadFilter,
           },
         });
         days.push({ day: d0.toISOString(), count: num(count) });
@@ -1882,9 +2021,18 @@ export class ReportingService {
     to?: string,
     sourcesCsv?: string,
     sourcesExcludeCsv?: string,
+    tagsCsv?: string,
+    leadCreatedFrom?: string,
+    leadCreatedTo?: string,
   ): Promise<SalesWeeklyItem[]> {
     const r = toRange(from, to);
-    const sourceFilter = buildLeadSourceWhere(sourcesCsv, sourcesExcludeCsv);
+    const leadFilter = buildLeadWhere({
+      sourcesCsv,
+      sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
+    });
 
     const start = mondayOfUTC(r.from ?? new Date());
     const end = sundayOfUTC(r.to ?? new Date());
@@ -1894,7 +2042,7 @@ export class ReportingService {
       const ws = mondayOfUTC(w);
       const we = sundayOfUTC(w);
       const where = await this.wonFilter({ from: ws, to: we });
-      Object.assign(where, sourceFilter);
+      Object.assign(where, leadFilter);
       const agg = await this.prisma.lead.aggregate({
         _sum: { saleValue: true },
         _count: { _all: true },
@@ -1976,12 +2124,18 @@ export class ReportingService {
     tz = 'Europe/Paris',
     sourcesCsv?: string,
     sourcesExcludeCsv?: string,
+    tagsCsv?: string,
+    leadCreatedFrom?: string,
+    leadCreatedTo?: string,
   ): Promise<Map<string, { avg: number; n: number }>> {
     const r = toRange(from, to);
     if (!r.from || !r.to) return new Map();
     const leadSourceSql = buildLeadSourceSql({
       sourcesCsv,
       sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
       alias: 'l',
     });
 
@@ -2037,10 +2191,19 @@ export class ReportingService {
     to?: string,
     sourcesCsv?: string,
     sourcesExcludeCsv?: string,
+    tagsCsv?: string,
+    leadCreatedFrom?: string,
+    leadCreatedTo?: string,
   ): Promise<SetterRow[]> {
     const r = toRange(from, to);
     const spend = await this.sumSpend(r);
-    const leadSourceWhere = buildLeadSourceWhere(sourcesCsv, sourcesExcludeCsv);
+    const leadSourceWhere = buildLeadWhere({
+      sourcesCsv,
+      sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
+    });
 
     // 1) Setters actifs
     const setters = await this.prisma.user.findMany({
@@ -2063,6 +2226,9 @@ export class ReportingService {
       'Europe/Paris',
       sourcesCsv,
       sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
     );
 
     const rows: SetterRow[] = [];
@@ -2084,6 +2250,9 @@ export class ReportingService {
           distinctByLead: true,
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         }),
         this.countSE({
           stages: [LeadStage.RV1_CANCELED],
@@ -2092,6 +2261,9 @@ export class ReportingService {
           distinctByLead: true,
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         }),
         this.countSE({
           stages: [LeadStage.RV1_NO_SHOW],
@@ -2100,6 +2272,9 @@ export class ReportingService {
           distinctByLead: true,
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         }),
         this.countSE({
           stages: [LeadStage.RV1_HONORED],
@@ -2108,6 +2283,9 @@ export class ReportingService {
           distinctByLead: true,
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         }),
       ]);
 
@@ -2199,6 +2377,9 @@ export class ReportingService {
     tz = 'Europe/Paris',
     sourcesCsv?: string,
     sourcesExcludeCsv?: string,
+    tagsCsv?: string,
+    leadCreatedFrom?: string,
+    leadCreatedTo?: string,
   ): Promise<{ total: number; byDay?: Array<{ day: string; count: number }> }> {
     const r = toRange(from, to);
     const stageEnums = toStages.map((s) => s as LeadStage);
@@ -2206,6 +2387,9 @@ export class ReportingService {
       sourcesCsv,
       sourcesExcludeCsv,
       alias: 'l',
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
     });
 
     // No window → just total (unchanged)
@@ -2213,7 +2397,13 @@ export class ReportingService {
       const total = await this.prisma.stageEvent.count({
         where: {
           toStage: { in: stageEnums },
-          lead: buildLeadSourceWhere(sourcesCsv, sourcesExcludeCsv),
+          lead: buildLeadWhere({
+            sourcesCsv,
+            sourcesExcludeCsv,
+            tagsCsv,
+            leadCreatedFrom,
+            leadCreatedTo,
+          }),
         },
       });
       return { total: num(total), byDay: [] };
@@ -2260,6 +2450,9 @@ export class ReportingService {
     tz = 'Europe/Paris',
     sourcesCsv?: string,
     sourcesExcludeCsv?: string,
+    tagsCsv?: string,
+    leadCreatedFrom?: string,
+    leadCreatedTo?: string,
   ) {
     return this.perDayFromStageEvents(
       [stage as unknown as LeadStage],
@@ -2268,6 +2461,9 @@ export class ReportingService {
       tz,
       sourcesCsv,
       sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
     );
   }
 
@@ -2278,6 +2474,9 @@ export class ReportingService {
     tz = 'Europe/Paris',
     sourcesCsv?: string,
     sourcesExcludeCsv?: string,
+    tagsCsv?: string,
+    leadCreatedFrom?: string,
+    leadCreatedTo?: string,
   ): Promise<{
     total: number;
     byDay: Array<{
@@ -2299,7 +2498,13 @@ export class ReportingService {
               'RV2_POSTPONED',
             ] as any,
           },
-          lead: buildLeadSourceWhere(sourcesCsv, sourcesExcludeCsv),
+          lead: buildLeadWhere({
+            sourcesCsv,
+            sourcesExcludeCsv,
+            tagsCsv,
+            leadCreatedFrom,
+            leadCreatedTo,
+          }),
         },
       });
       return {
@@ -2318,6 +2523,9 @@ export class ReportingService {
           tz,
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         ),
         this.perDayFromStageEvents(
           ['RV1_POSTPONED'],
@@ -2326,6 +2534,9 @@ export class ReportingService {
           tz,
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         ),
         this.perDayFromStageEvents(
           [LeadStage.RV2_CANCELED],
@@ -2334,6 +2545,9 @@ export class ReportingService {
           tz,
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         ),
         this.perDayFromStageEvents(
           ['RV2_POSTPONED'],
@@ -2342,6 +2556,9 @@ export class ReportingService {
           tz,
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         ),
       ]);
 
@@ -2404,9 +2621,18 @@ export class ReportingService {
     to?: string,
     sourcesCsv?: string,
     sourcesExcludeCsv?: string,
+    tagsCsv?: string,
+    leadCreatedFrom?: string,
+    leadCreatedTo?: string,
   ): Promise<CloserRow[]> {
     const r = toRange(from, to);
-    const leadSourceWhere = buildLeadSourceWhere(sourcesCsv, sourcesExcludeCsv);
+    const leadSourceWhere = buildLeadWhere({
+      sourcesCsv,
+      sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
+    });
     const closers = await this.prisma.user.findMany({
       where: { role: Role.CLOSER, isActive: true },
       select: { id: true, firstName: true, email: true },
@@ -2442,6 +2668,9 @@ export class ReportingService {
           by: { closerId: c.id },
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         }),
         this.countSE({
           stages: [LeadStage.RV1_HONORED],
@@ -2449,6 +2678,9 @@ export class ReportingService {
           by: { closerId: c.id },
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         }),
         this.countSE({
           stages: [LeadStage.RV1_NO_SHOW],
@@ -2456,6 +2688,9 @@ export class ReportingService {
           by: { closerId: c.id },
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         }),
         this.countSE({
           stages: [LeadStage.RV1_CANCELED],
@@ -2463,6 +2698,9 @@ export class ReportingService {
           by: { closerId: c.id },
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         }),
         this.countSE({
           stages: [LeadStage.RV1_POSTPONED as any],
@@ -2470,6 +2708,9 @@ export class ReportingService {
           by: { closerId: c.id },
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         }),
         this.countSE({
           stages: [LeadStage.RV1_NOT_QUALIFIED],
@@ -2477,6 +2718,9 @@ export class ReportingService {
           by: { closerId: c.id },
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         }),
 
         this.countSE({
@@ -2485,6 +2729,9 @@ export class ReportingService {
           by: { closerId: c.id },
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         }),
         this.countSE({
           stages: [LeadStage.RV2_HONORED],
@@ -2492,6 +2739,9 @@ export class ReportingService {
           by: { closerId: c.id },
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         }),
         this.countSE({
           stages: [LeadStage.RV2_NO_SHOW],
@@ -2499,6 +2749,9 @@ export class ReportingService {
           by: { closerId: c.id },
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         }),
         this.countSE({
           stages: [LeadStage.RV2_CANCELED],
@@ -2506,6 +2759,9 @@ export class ReportingService {
           by: { closerId: c.id },
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         }),
         this.countSE({
           stages: [LeadStage.RV2_POSTPONED as any],
@@ -2513,6 +2769,9 @@ export class ReportingService {
           by: { closerId: c.id },
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         }),
 
         // ⚠️ nécessite d'ajouter CONTRACT_SIGNED dans l'enum LeadStage + StageEvent
@@ -2522,6 +2781,9 @@ export class ReportingService {
           by: { closerId: c.id },
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         }),
       ]);
 
@@ -2608,12 +2870,18 @@ export class ReportingService {
     to?: string,
     sourcesCsv?: string,
     sourcesExcludeCsv?: string,
+    tagsCsv?: string,
+    leadCreatedFrom?: string,
+    leadCreatedTo?: string,
   ): Promise<SpotlightSetterRow[]> {
     const base = await this.settersReport(
       from,
       to,
       sourcesCsv,
       sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
     );
 
     const rows: SpotlightSetterRow[] = base.map((r) => {
@@ -2670,12 +2938,18 @@ export class ReportingService {
     to?: string,
     sourcesCsv?: string,
     sourcesExcludeCsv?: string,
+    tagsCsv?: string,
+    leadCreatedFrom?: string,
+    leadCreatedTo?: string,
   ): Promise<SpotlightCloserRow[]> {
     const base = await this.closersReport(
       from,
       to,
       sourcesCsv,
       sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
     );
 
     const rows: SpotlightCloserRow[] = base.map((r) => {
@@ -2727,13 +3001,25 @@ export class ReportingService {
     to?: string,
     sourcesCsv?: string,
     sourcesExcludeCsv?: string,
+    tagsCsv?: string,
+    leadCreatedFrom?: string,
+    leadCreatedTo?: string,
   ): Promise<DuoRow[]> {
     const r = toRange(from, to);
     const where = await this.wonFilter(r);
     // on ne garde que les leads avec setter + closer
     where.setterId = { not: null };
     where.closerId = { not: null };
-    Object.assign(where, buildLeadSourceWhere(sourcesCsv, sourcesExcludeCsv));
+    Object.assign(
+      where,
+      buildLeadWhere({
+        sourcesCsv,
+        sourcesExcludeCsv,
+        tagsCsv,
+        leadCreatedFrom,
+        leadCreatedTo,
+      }),
+    );
 
     const leads = await this.prisma.lead.findMany({
       where,
@@ -2837,15 +3123,32 @@ export class ReportingService {
     to?: string,
     sourcesCsv?: string,
     sourcesExcludeCsv?: string,
+    tagsCsv?: string,
+    leadCreatedFrom?: string,
+    leadCreatedTo?: string,
   ): Promise<SummaryOut> {
     const r = toRange(from, to);
-    const sourceFilter = buildLeadSourceWhere(sourcesCsv, sourcesExcludeCsv);
+    const leadFilter = buildLeadWhere({
+      sourcesCsv,
+      sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
+    });
 
     const [leads, wonAgg, setters, closers] = await Promise.all([
-      this.leadsReceived(from, to, sourcesCsv, sourcesExcludeCsv),
+      this.leadsReceived(
+        from,
+        to,
+        sourcesCsv,
+        sourcesExcludeCsv,
+        tagsCsv,
+        leadCreatedFrom,
+        leadCreatedTo,
+      ),
       (async () => {
         const where = await this.wonFilter(r);
-        Object.assign(where, sourceFilter);
+        Object.assign(where, leadFilter);
         const agg = await this.prisma.lead.aggregate({
           _sum: { saleValue: true },
           _count: { _all: true },
@@ -2856,8 +3159,24 @@ export class ReportingService {
           count: num(agg._count._all ?? 0),
         };
       })(),
-      this.settersReport(from, to, sourcesCsv, sourcesExcludeCsv),
-      this.closersReport(from, to, sourcesCsv, sourcesExcludeCsv),
+      this.settersReport(
+        from,
+        to,
+        sourcesCsv,
+        sourcesExcludeCsv,
+        tagsCsv,
+        leadCreatedFrom,
+        leadCreatedTo,
+      ),
+      this.closersReport(
+        from,
+        to,
+        sourcesCsv,
+        sourcesExcludeCsv,
+        tagsCsv,
+        leadCreatedFrom,
+        leadCreatedTo,
+      ),
     ]);
 
     const spend = await this.sumSpend(r);
@@ -2901,10 +3220,19 @@ export class ReportingService {
     r: Range,
     sourcesCsv?: string,
     sourcesExcludeCsv?: string,
+    tagsCsv?: string,
+    leadCreatedFrom?: string,
+    leadCreatedTo?: string,
   ): Promise<number> {
     if (!keys?.length) return 0;
     const ids = await this.stageIdsForKeys(keys);
-    const leadSourceWhere = buildLeadSourceWhere(sourcesCsv, sourcesExcludeCsv);
+    const leadSourceWhere = buildLeadWhere({
+      sourcesCsv,
+      sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
+    });
     const where: any = {
       AND: [
         {
@@ -2926,10 +3254,19 @@ export class ReportingService {
     keys: string[],
     sourcesCsv?: string,
     sourcesExcludeCsv?: string,
+    tagsCsv?: string,
+    leadCreatedFrom?: string,
+    leadCreatedTo?: string,
   ): Promise<number> {
     if (!keys?.length) return 0;
     const ids = await this.stageIdsForKeys(keys);
-    const leadSourceWhere = buildLeadSourceWhere(sourcesCsv, sourcesExcludeCsv);
+    const leadSourceWhere = buildLeadWhere({
+      sourcesCsv,
+      sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
+    });
     const where: any = {
       AND: [
         {
@@ -2952,6 +3289,9 @@ export class ReportingService {
     mode?: 'entered' | 'current';
     sourcesCsv?: string;
     sourcesExcludeCsv?: string;
+    tagsCsv?: string;
+    leadCreatedFrom?: string;
+    leadCreatedTo?: string;
   }): Promise<Record<string, number>> {
     const {
       keys,
@@ -2960,6 +3300,9 @@ export class ReportingService {
       mode = 'entered',
       sourcesCsv,
       sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
     } = args;
     const r = toRange(from, to);
     const unique = Array.from(new Set(keys));
@@ -2973,12 +3316,18 @@ export class ReportingService {
                 [k],
                 sourcesCsv,
                 sourcesExcludeCsv,
+                tagsCsv,
+                leadCreatedFrom,
+                leadCreatedTo,
               )
             : await this.countEnteredInStages(
                 [k],
                 r,
                 sourcesCsv,
                 sourcesExcludeCsv,
+                tagsCsv,
+                leadCreatedFrom,
+                leadCreatedTo,
               );
       }),
     );
@@ -2990,13 +3339,27 @@ export class ReportingService {
     r: Range,
     sourcesCsv?: string,
     sourcesExcludeCsv?: string,
+    tagsCsv?: string,
+    leadCreatedFrom?: string,
+    leadCreatedTo?: string,
   ): Promise<FunnelTotals> {
     const get = (keys: string[]) =>
-      this.countEnteredInStages(keys, r, sourcesCsv, sourcesExcludeCsv);
-    const leadSourceFilter = buildLeadSourceWhere(
+      this.countEnteredInStages(
+        keys,
+        r,
+        sourcesCsv,
+        sourcesExcludeCsv,
+        tagsCsv,
+        leadCreatedFrom,
+        leadCreatedTo,
+      );
+    const leadSourceFilter = buildLeadWhere({
       sourcesCsv,
       sourcesExcludeCsv,
-    );
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
+    });
 
     const [
       leadsCreated,
@@ -3133,12 +3496,18 @@ export class ReportingService {
     to?: string,
     sourcesCsv?: string,
     sourcesExcludeCsv?: string,
+    tagsCsv?: string,
+    leadCreatedFrom?: string,
+    leadCreatedTo?: string,
   ): Promise<FunnelOut> {
     const r = toRange(from, to);
     const totals = await this.funnelFromStages(
       r,
       sourcesCsv,
       sourcesExcludeCsv,
+      tagsCsv,
+      leadCreatedFrom,
+      leadCreatedTo,
     );
 
     const start = mondayOfUTC(r.from ?? new Date());
@@ -3154,6 +3523,9 @@ export class ReportingService {
         wRange,
         sourcesCsv,
         sourcesExcludeCsv,
+        tagsCsv,
+        leadCreatedFrom,
+        leadCreatedTo,
       );
       weekly.push({
         weekStart: ws.toISOString(),
@@ -3171,6 +3543,9 @@ export class ReportingService {
     to?: string,
     sourcesCsv?: string,
     sourcesExcludeCsv?: string,
+    tagsCsv?: string,
+    leadCreatedFrom?: string,
+    leadCreatedTo?: string,
   ): Promise<WeeklyOpsRow[]> {
     const r = toRange(from, to);
 
@@ -3192,24 +3567,36 @@ export class ReportingService {
           wRange,
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         ),
         rv0Planned: await this.countEnteredInStages(
           ['RV0_PLANNED'],
           wRange,
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         ),
         rv0Honored: await this.countEnteredInStages(
           ['RV0_HONORED'],
           wRange,
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         ),
         rv0NoShow: await this.countEnteredInStages(
           ['RV0_NO_SHOW'],
           wRange,
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         ),
 
         rv1Planned: await this.countEnteredInStages(
@@ -3217,18 +3604,27 @@ export class ReportingService {
           wRange,
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         ),
         rv1Honored: await this.countEnteredInStages(
           ['RV1_HONORED'],
           wRange,
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         ),
         rv1NoShow: await this.countEnteredInStages(
           ['RV1_NO_SHOW'],
           wRange,
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         ),
 
         rv2Planned: await this.countEnteredInStages(
@@ -3236,24 +3632,36 @@ export class ReportingService {
           wRange,
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         ),
         rv2Honored: await this.countEnteredInStages(
           ['RV2_HONORED'],
           wRange,
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         ),
         rv2NoShow: await this.countEnteredInStages(
           ['RV2_NO_SHOW'],
           wRange,
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         ),
         rv2Postponed: await this.countEnteredInStages(
           ['RV2_POSTPONED'],
           wRange,
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         ),
 
         notQualified: await this.countEnteredInStages(
@@ -3261,12 +3669,18 @@ export class ReportingService {
           wRange,
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         ),
         lost: await this.countEnteredInStages(
           ['LOST'],
           wRange,
           sourcesCsv,
           sourcesExcludeCsv,
+          tagsCsv,
+          leadCreatedFrom,
+          leadCreatedTo,
         ),
       };
       out.push(row);
@@ -3402,12 +3816,21 @@ export class ReportingService {
     limit: number;
     sourcesCsv?: string;
     sourcesExcludeCsv?: string;
+    tagsCsv?: string;
+    leadCreatedFrom?: string;
+    leadCreatedTo?: string;
   }) {
     const r = toRange(args.from, args.to);
     const rows = await this.prisma.lead.findMany({
       where: {
         ...between('createdAt', r),
-        ...buildLeadSourceWhere(args.sourcesCsv, args.sourcesExcludeCsv),
+        ...buildLeadWhere({
+          sourcesCsv: args.sourcesCsv,
+          sourcesExcludeCsv: args.sourcesExcludeCsv,
+          tagsCsv: args.tagsCsv,
+          leadCreatedFrom: args.leadCreatedFrom,
+          leadCreatedTo: args.leadCreatedTo,
+        }),
       },
       orderBy: { createdAt: 'desc' },
       take: args.limit,
@@ -3447,12 +3870,21 @@ export class ReportingService {
     limit: number;
     sourcesCsv?: string;
     sourcesExcludeCsv?: string;
+    tagsCsv?: string;
+    leadCreatedFrom?: string;
+    leadCreatedTo?: string;
   }) {
     const r = toRange(args.from, args.to);
     const where = await this.wonFilter(r);
     Object.assign(
       where,
-      buildLeadSourceWhere(args.sourcesCsv, args.sourcesExcludeCsv),
+      buildLeadWhere({
+        sourcesCsv: args.sourcesCsv,
+        sourcesExcludeCsv: args.sourcesExcludeCsv,
+        tagsCsv: args.tagsCsv,
+        leadCreatedFrom: args.leadCreatedFrom,
+        leadCreatedTo: args.leadCreatedTo,
+      }),
     );
     const rows = await this.prisma.lead.findMany({
       where,
@@ -3505,6 +3937,9 @@ export class ReportingService {
     limit: number;
     sourcesCsv?: string;
     sourcesExcludeCsv?: string;
+    tagsCsv?: string;
+    leadCreatedFrom?: string;
+    leadCreatedTo?: string;
   }) {
     const { from, to, type, status, userId } = args;
     const limit = args.limit ?? 2000;
@@ -3547,7 +3982,13 @@ export class ReportingService {
     const where: Prisma.StageEventWhereInput = {
       toStage: { in: stages },
       ...between('occurredAt', r),
-      lead: buildLeadSourceWhere(args.sourcesCsv, args.sourcesExcludeCsv),
+      lead: buildLeadWhere({
+        sourcesCsv: args.sourcesCsv,
+        sourcesExcludeCsv: args.sourcesExcludeCsv,
+        tagsCsv: args.tagsCsv,
+        leadCreatedFrom: args.leadCreatedFrom,
+        leadCreatedTo: args.leadCreatedTo,
+      }),
     };
 
     // Gestion de userId : on colle à la logique setters/closers
@@ -3678,12 +4119,21 @@ export class ReportingService {
     limit: number;
     sourcesCsv?: string;
     sourcesExcludeCsv?: string;
+    tagsCsv?: string;
+    leadCreatedFrom?: string;
+    leadCreatedTo?: string;
   }) {
     const r = toRange(args.from, args.to);
     const rows = await this.prisma.callRequest.findMany({
       where: {
         ...between('requestedAt', r),
-        lead: buildLeadSourceWhere(args.sourcesCsv, args.sourcesExcludeCsv),
+        lead: buildLeadWhere({
+          sourcesCsv: args.sourcesCsv,
+          sourcesExcludeCsv: args.sourcesExcludeCsv,
+          tagsCsv: args.tagsCsv,
+          leadCreatedFrom: args.leadCreatedFrom,
+          leadCreatedTo: args.leadCreatedTo,
+        }),
       },
       orderBy: { requestedAt: 'desc' },
       take: args.limit,
@@ -3751,6 +4201,9 @@ export class ReportingService {
     limit: number;
     sourcesCsv?: string;
     sourcesExcludeCsv?: string;
+    tagsCsv?: string;
+    leadCreatedFrom?: string;
+    leadCreatedTo?: string;
   }) {
     if (args.answered) {
       const r = toRange(args.from, args.to);
@@ -3758,7 +4211,13 @@ export class ReportingService {
         where: {
           outcome: CallOutcome.ANSWERED,
           ...between('startedAt', r),
-          lead: buildLeadSourceWhere(args.sourcesCsv, args.sourcesExcludeCsv),
+          lead: buildLeadWhere({
+            sourcesCsv: args.sourcesCsv,
+            sourcesExcludeCsv: args.sourcesExcludeCsv,
+            tagsCsv: args.tagsCsv,
+            leadCreatedFrom: args.leadCreatedFrom,
+            leadCreatedTo: args.leadCreatedTo,
+          }),
         },
         orderBy: { startedAt: 'asc' }, // (asc/desc — libre)
         take: args.limit,
@@ -3825,7 +4284,13 @@ export class ReportingService {
         where: {
           stage: LeadStage.SETTER_NO_SHOW,
           ...between('stageUpdatedAt', r),
-          ...buildLeadSourceWhere(args.sourcesCsv, args.sourcesExcludeCsv),
+          ...buildLeadWhere({
+            sourcesCsv: args.sourcesCsv,
+            sourcesExcludeCsv: args.sourcesExcludeCsv,
+            tagsCsv: args.tagsCsv,
+            leadCreatedFrom: args.leadCreatedFrom,
+            leadCreatedTo: args.leadCreatedTo,
+          }),
         },
         orderBy: { stageUpdatedAt: 'desc' },
         take: args.limit,
@@ -3863,7 +4328,16 @@ export class ReportingService {
 
     const r = toRange(args.from, args.to);
     const rows = await this.prisma.callAttempt.findMany({
-      where: between('startedAt', r),
+      where: {
+        ...between('startedAt', r),
+        lead: buildLeadWhere({
+          sourcesCsv: args.sourcesCsv,
+          sourcesExcludeCsv: args.sourcesExcludeCsv,
+          tagsCsv: args.tagsCsv,
+          leadCreatedFrom: args.leadCreatedFrom,
+          leadCreatedTo: args.leadCreatedTo,
+        }),
+      },
       orderBy: { startedAt: 'desc' },
       take: args.limit,
       select: {
@@ -3922,4 +4396,3 @@ export class ReportingService {
     return { ok: true, count: items.length, items };
   }
 }
-
