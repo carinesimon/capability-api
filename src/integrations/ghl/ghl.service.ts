@@ -264,7 +264,6 @@ export class GhlService {
           lastName: null,
           email: args.contactEmail?.toLowerCase() || null,
           source: 'GHL',
-          source: 'GHL',
           ghlContactId: args.ghlContactId ?? null,
           ...(mapped && Object.values(LeadStage).includes(mapped as LeadStage)
             ? { stage: mapped as LeadStage, stageUpdatedAt: new Date() }
@@ -605,4 +604,3 @@ export class GhlService {
     }
   }
 }
-
