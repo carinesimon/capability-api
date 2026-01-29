@@ -241,6 +241,14 @@ export class GhlService {
     saleValue?: number | null;
     eventId?: string | null; // pour idempotence StageEvents
   }) {
+    const toFiniteNumber = (value: unknown): number | undefined => {
+      if (value === null || value === undefined || value === '') return undefined;
+      const n = Number(value);
+      return Number.isFinite(n) ? n : undefined;
+    };
+    const saleValueFromPayload = toFiniteNumber(args.saleValue);
+    const amountFromPayload = toFiniteNumber(args.amount);
+    const resolvedSaleValue = saleValueFromPayload ?? amountFromPayload;
     const lead = await this.findLeadByEmailOrGhlId(
       (args.contactEmail || '').toLowerCase() || null,
       args.ghlContactId || null,
@@ -256,11 +264,12 @@ export class GhlService {
           lastName: null,
           email: args.contactEmail?.toLowerCase() || null,
           source: 'GHL',
+          source: 'GHL',
           ghlContactId: args.ghlContactId ?? null,
           ...(mapped && Object.values(LeadStage).includes(mapped as LeadStage)
             ? { stage: mapped as LeadStage, stageUpdatedAt: new Date() }
             : {}),
-          ...(mapped === 'WON' && args.saleValue != null ? { saleValue: args.saleValue! } : {}),
+          ...(mapped === 'WON' && resolvedSaleValue != null ? { saleValue: resolvedSaleValue } : {}),
         },
       });
 
@@ -282,7 +291,7 @@ export class GhlService {
       if (Object.values(LeadStage).includes(mapped as LeadStage)) {
         update.stage = mapped;
         update.stageUpdatedAt = new Date();
-        if (mapped === 'WON' && args.saleValue != null) update.saleValue = args.saleValue!;
+        if (mapped === 'WON' && resolvedSaleValue != null) update.saleValue = resolvedSaleValue;
         await this.safeRecordStageEntry({
           leadId: lead.id,
           fromStage: (lead.stage as any) ?? 'LEADS_RECEIVED',
@@ -596,3 +605,4 @@ export class GhlService {
     }
   }
 }
+
