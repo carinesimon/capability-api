@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client'; // en haut du fichier
+import { Prisma } from '@prisma/client'; // en haut du fichier.
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AppointmentStatus,
@@ -4396,3 +4396,4 @@ export class ReportingService {
     return { ok: true, count: items.length, items };
   }
 }
+
