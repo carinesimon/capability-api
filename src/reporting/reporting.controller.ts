@@ -40,7 +40,6 @@ function validateLeadCreatedRange(
 @Controller('reporting')
 export class ReportingController {
   constructor(private readonly reporting: ReportingService) {}
-
   /* --------- Bloc /reporting --------- */
   @Get('summary')
   async getSummary(
@@ -777,3 +776,4 @@ export class ReportingController {
     );
   }
 }
+
