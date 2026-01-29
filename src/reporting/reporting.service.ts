@@ -12,7 +12,7 @@ import {
 import PDFKit from 'pdfkit';
 import { Parser as Json2Csv } from 'json2csv';
 
-type Range = { from?: Date; to?: Date; endExclusive?: boolean };
+type Range = { from?: Date; to?: Date };
 type RangeTz = { from?: string; to?: string; tz: string };
 const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 type RangeArgs = { from?: string; to?: string };
@@ -522,65 +522,6 @@ function toLocalDateISO(date: Date, tz: string) {
 }
 
 // ---- helpers d’analyse (communs) ----
-function parseDateOnly(s: string) {
-  const [y, m, d] = s.split('-').map(Number);
-  return { y, m, d };
-}
-
-function formatDateOnlyUTC(date: Date) {
-  const y = date.getUTCFullYear();
-  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const d = String(date.getUTCDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
-function addDaysLocal(dateStr: string, days: number) {
-  const { y, m, d } = parseDateOnly(dateStr);
-  const date = new Date(Date.UTC(y, m - 1, d));
-  date.setUTCDate(date.getUTCDate() + days);
-  return formatDateOnlyUTC(date);
-}
-
-function toUtcDateFromLocal(dateStr: string) {
-  const { y, m, d } = parseDateOnly(dateStr);
-  return new Date(Date.UTC(y, m - 1, d));
-}
-
-function weekStartLocal(dateStr: string) {
-  const { y, m, d } = parseDateOnly(dateStr);
-  const date = new Date(Date.UTC(y, m - 1, d));
-  const weekday = date.getUTCDay();
-  const diff = (weekday + 6) % 7;
-  date.setUTCDate(date.getUTCDate() - diff);
-  return formatDateOnlyUTC(date);
-}
-
-function timeZoneOffsetMs(date: Date, tz: string) {
-  const fmt = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  });
-  const parts = fmt
-    .formatToParts(date)
-    .reduce((acc: any, p: any) => ((acc[p.type] = p.value), acc), {});
-  const asUtc = new Date(
-    `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}Z`,
-  );
-  return asUtc.getTime() - date.getTime();
-}
-
-function startOfDayInTz(dateStr: string, tz: string) {
-  const { y, m, d } = parseDateOnly(dateStr);
-  const utcDate = new Date(Date.UTC(y, m - 1, d, 0, 0, 0));
-  const offset = timeZoneOffsetMs(utcDate, tz);
-  return new Date(utcDate.getTime() - offset);
-}
 
 const startOfDayUTC = (s?: string) => (s ? toUTCDateOnly(s) : undefined);
 function endOfDayUTC(s?: string) {
@@ -590,12 +531,8 @@ function endOfDayUTC(s?: string) {
   d1.setUTCHours(23, 59, 59, 999);
   return d1;
 }
-function toRange(from?: string, to?: string, tz = 'Europe/Paris'): Range {
-  return {
-    from: from ? startOfDayInTz(from, tz) : undefined,
-    to: to ? startOfDayInTz(addDaysLocal(to, 1), tz) : undefined,
-    endExclusive: true,
-  };
+function toRange(from?: string, to?: string): Range {
+  return { from: startOfDayUTC(from), to: endOfDayUTC(to) };
 }
 
 /** SQL filter window for a *local calendar day* in the given tz. */
@@ -638,26 +575,9 @@ function between(
   r: Range,
 ) {
   if (!r.from && !r.to) return {};
-  const endOp = r.endExclusive ? 'lt' : 'lte';
   return {
-    [field]: {
-      gte: r.from ?? undefined,
-      ...(r.to ? { [endOp]: r.to } : {}),
-    },
+    [field]: { gte: r.from ?? undefined, lte: r.to ?? undefined },
   } as any;
-}
-
-function betweenSql(field: string, r: Range) {
-  if (!r.from && !r.to) return Prisma.sql`TRUE`;
-  const clauses: Prisma.Sql[] = [];
-  if (r.from) {
-    clauses.push(Prisma.sql`${Prisma.raw(field)} >= ${r.from}`);
-  }
-  if (r.to) {
-    const op = r.endExclusive ? '<' : '<=';
-    clauses.push(Prisma.sql`${Prisma.raw(field)} ${Prisma.raw(op)} ${r.to}`);
-  }
-  return Prisma.sql`${Prisma.join(clauses, ' AND ')}`;
 }
 function mondayOfUTC(d: Date) {
   const x = new Date(d);
@@ -676,7 +596,7 @@ function sundayOfUTC(d: Date) {
 function intersectWindow(aStart: Date, aEnd: Date, bStart?: Date, bEnd?: Date) {
   const s = new Date(Math.max(aStart.getTime(), (bStart ?? aStart).getTime()));
   const e = new Date(Math.min(aEnd.getTime(), (bEnd ?? aEnd).getTime()));
-  return s >= e ? null : { start: s, end: e };
+  return s > e ? null : { start: s, end: e };
 }
 
 function pct(num: number, den: number) {
@@ -978,7 +898,10 @@ export class ReportingService {
     const stageList = Prisma.join(
       stages.map((s) => Prisma.sql`${s}::"LeadStage"`),
     );
-    const timeClause = betweenSql(`se."occurredAt"`, r);
+    const timeClause =
+      r.from && r.to
+        ? Prisma.sql`se."occurredAt" >= ${r.from} AND se."occurredAt" <= ${r.to}`
+        : Prisma.sql`TRUE`;
 
     const rows = await this.prisma.$queryRaw<Array<{ n: number }>>(Prisma.sql`
     SELECT ${selectCount} AS n
@@ -1015,7 +938,10 @@ export class ReportingService {
     const stageList = Prisma.join(
       stages.map((s) => Prisma.sql`${s}::"LeadStage"`),
     );
-    const timeClause = betweenSql(`se."occurredAt"`, r);
+    const timeClause =
+      r.from && r.to
+        ? Prisma.sql`se."occurredAt" >= ${r.from} AND se."occurredAt" <= ${r.to}`
+        : Prisma.sql`TRUE`;
 
     const rows = await this.prisma.$queryRaw<
       Array<{ setterId: string | null; n: number }>
@@ -1061,17 +987,15 @@ export class ReportingService {
   async exportSpotlightSettersCSV({
     from,
     to,
-    tz = 'Europe/Paris',
     sourcesCsv,
     sourcesExcludeCsv,
     tagsCsv,
     leadCreatedFrom,
     leadCreatedTo,
-  }: RangeSourcesArgs & { tz?: string }): Promise<Buffer> {
+  }: RangeSourcesArgs): Promise<Buffer> {
     const rows = await this.spotlightSetters(
       from,
       to,
-      tz,
       sourcesCsv,
       sourcesExcludeCsv,
       tagsCsv,
@@ -1123,17 +1047,15 @@ export class ReportingService {
   async exportSpotlightClosersCSV({
     from,
     to,
-    tz = 'Europe/Paris',
     sourcesCsv,
     sourcesExcludeCsv,
     tagsCsv,
     leadCreatedFrom,
     leadCreatedTo,
-  }: RangeSourcesArgs & { tz?: string }): Promise<Buffer> {
+  }: RangeSourcesArgs): Promise<Buffer> {
     const rows = await this.spotlightClosers(
       from,
       to,
-      tz,
       sourcesCsv,
       sourcesExcludeCsv,
       tagsCsv,
@@ -1366,18 +1288,16 @@ export class ReportingService {
   async exportSpotlightSettersPDF({
     from,
     to,
-    tz = 'Europe/Paris',
     sourcesCsv,
     sourcesExcludeCsv,
     tagsCsv,
     leadCreatedFrom,
     leadCreatedTo,
-  }: RangeSourcesArgs & { tz?: string }): Promise<Buffer> {
+  }: RangeSourcesArgs): Promise<Buffer> {
     const rows =
       (await this.spotlightSetters(
         from,
         to,
-        tz,
         sourcesCsv,
         sourcesExcludeCsv,
         tagsCsv,
@@ -1513,18 +1433,16 @@ export class ReportingService {
   async exportSpotlightClosersPDF({
     from,
     to,
-    tz = 'Europe/Paris',
     sourcesCsv,
     sourcesExcludeCsv,
     tagsCsv,
     leadCreatedFrom,
     leadCreatedTo,
-  }: RangeSourcesArgs & { tz?: string }): Promise<Buffer> {
+  }: RangeSourcesArgs): Promise<Buffer> {
     const rows =
       (await this.spotlightClosers(
         from,
         to,
-        tz,
         sourcesCsv,
         sourcesExcludeCsv,
         tagsCsv,
@@ -1688,8 +1606,8 @@ export class ReportingService {
       const ws = mondayOfUTC(new Date(b.weekStart));
       const we = sundayOfUTC(new Date(b.weekStart));
 
-      // Intersection entre [ws;we] et [r.from;r.to)
-      if ((r.to ? ws < r.to : true) && (r.from ? we >= r.from : true)) {
+      // Intersection entre [ws;we] et [r.from;r.to]
+      if ((r.from ? ws <= r.to! : true) && (r.to ? we >= r.from! : true)) {
         sum += num(b.amount);
       }
     }
@@ -1777,7 +1695,7 @@ export class ReportingService {
 
       // si on a un range, on ne garde que les semaines qui intersectent
       if (r.from && r.to) {
-        const intersects = !(ws >= r.to || we < r.from);
+        const intersects = !(ws > r.to || we < r.from);
         if (!intersects) continue;
       }
 
@@ -1978,14 +1896,13 @@ export class ReportingService {
   async leadsReceived(
     from?: string,
     to?: string,
-    tz = 'Europe/Paris',
     sourcesCsv?: string,
     sourcesExcludeCsv?: string,
     tagsCsv?: string,
     leadCreatedFrom?: string,
     leadCreatedTo?: string,
   ): Promise<LeadsReceivedOut> {
-    const r = toRange(from, to, tz);
+    const r = toRange(from, to);
     const leadFilter = buildLeadWhere({
       sourcesCsv,
       sourcesExcludeCsv,
@@ -2001,38 +1918,29 @@ export class ReportingService {
       },
     });
 
-    if (!from || !to) {
-      return { total: num(total), byDay: undefined };
+    const days: Array<{ day: string; count: number }> = [];
+    if (r.from && r.to) {
+      const start = new Date(r.from);
+      const end = new Date(r.to);
+      for (
+        let d = new Date(start);
+        d <= end;
+        d.setUTCDate(d.getUTCDate() + 1)
+      ) {
+        const d0 = new Date(d);
+        d0.setUTCHours(0, 0, 0, 0);
+        const d1 = new Date(d);
+        d1.setUTCHours(23, 59, 59, 999);
+        const count = await this.prisma.lead.count({
+          where: {
+            createdAt: { gte: d0, lte: d1 },
+            ...leadFilter,
+          },
+        });
+        days.push({ day: d0.toISOString(), count: num(count) });
+      }
     }
-
-    const leadSourceSql = buildLeadSourceSql({
-      sourcesCsv,
-      sourcesExcludeCsv,
-      tagsCsv,
-      leadCreatedFrom,
-      leadCreatedTo,
-      alias: 'l',
-    });
-
-    const rows = await this.prisma.$queryRaw<
-      Array<{ day: string; count: number }>
-    >(Prisma.sql`
-      SELECT
-        to_char(DATE_TRUNC('day', (l."createdAt" AT TIME ZONE ${tz})), 'YYYY-MM-DD') AS day,
-        COUNT(*)::int AS count
-      FROM "Lead" l
-      WHERE ${whereLocalDay('createdAt', from, to, tz)}
-      ${leadSourceSql}
-      GROUP BY 1
-      ORDER BY 1 ASC
-    `);
-
-    const map = new Map(rows.map((r0) => [r0.day, num(r0.count)]));
-    const byDay = daysSpanLocal(from, to).map((d) => ({
-      day: d,
-      count: map.get(d) ?? 0,
-    }));
-    return { total: num(total), byDay };
+    return { total: num(total), byDay: days.length ? days : undefined };
   }
 
   async cohortStatus(params: CohortStatusParams) {
@@ -2111,80 +2019,42 @@ export class ReportingService {
   async salesWeekly(
     from?: string,
     to?: string,
-    tz = 'Europe/Paris',
     sourcesCsv?: string,
     sourcesExcludeCsv?: string,
     tagsCsv?: string,
     leadCreatedFrom?: string,
     leadCreatedTo?: string,
   ): Promise<SalesWeeklyItem[]> {
-    const fromLocal = from ?? toLocalDateISO(new Date(), tz);
-    const toLocal = to ?? fromLocal;
-    const r = toRange(fromLocal, toLocal, tz);
-    const wonIds = await this.wonStageIds();
-    const wonClause = wonIds.length
-      ? Prisma.sql`l."stageId" = ANY(${Prisma.sql`ARRAY[${Prisma.join(wonIds)}]`})`
-      : Prisma.sql`l."stage" = ${LeadStage.WON}::"LeadStage"`;
-    const leadSourceSql = buildLeadSourceSql({
+    const r = toRange(from, to);
+    const leadFilter = buildLeadWhere({
       sourcesCsv,
       sourcesExcludeCsv,
       tagsCsv,
       leadCreatedFrom,
       leadCreatedTo,
-      alias: 'l',
     });
 
-    const timeClause = betweenSql(`l."stageUpdatedAt"`, r);
-    const rows = await this.prisma.$queryRaw<
-      Array<{
-        weekStart: string;
-        weekEnd: string;
-        revenue: number;
-        count: number;
-      }>
-    >(Prisma.sql`
-      SELECT
-        to_char(DATE_TRUNC('week', (l."stageUpdatedAt" AT TIME ZONE ${tz})), 'YYYY-MM-DD') AS "weekStart",
-        to_char(DATE_TRUNC('week', (l."stageUpdatedAt" AT TIME ZONE ${tz})) + interval '6 days', 'YYYY-MM-DD') AS "weekEnd",
-        COALESCE(SUM(l."saleValue"), 0)::numeric AS revenue,
-        COUNT(*)::int AS count
-      FROM "Lead" l
-      WHERE ${wonClause}
-        AND ${timeClause}
-        ${leadSourceSql}
-      GROUP BY 1, 2
-      ORDER BY 1 ASC
-    `);
-
-    const map = new Map(
-      rows.map((row) => [
-        row.weekStart,
-        {
-          revenue: num(row.revenue),
-          count: num(row.count),
-          weekEnd: row.weekEnd,
-        },
-      ]),
-    );
-
-    const startWeek = weekStartLocal(fromLocal);
-    const endWeek = weekStartLocal(toLocal);
-    const start = toUtcDateFromLocal(startWeek);
-    const end = toUtcDateFromLocal(endWeek);
+    const start = mondayOfUTC(r.from ?? new Date());
+    const end = sundayOfUTC(r.to ?? new Date());
     const out: SalesWeeklyItem[] = [];
 
-    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 7)) {
-      const weekStartLocalStr = formatDateOnlyUTC(d);
-      const weekEndLocalStr = addDaysLocal(weekStartLocalStr, 6);
-      const row = map.get(weekStartLocalStr);
+    for (let w = new Date(start); w <= end; w.setUTCDate(w.getUTCDate() + 7)) {
+      const ws = mondayOfUTC(w);
+      const we = sundayOfUTC(w);
+      const where = await this.wonFilter({ from: ws, to: we });
+      Object.assign(where, leadFilter);
+      const agg = await this.prisma.lead.aggregate({
+        _sum: { saleValue: true },
+        _count: { _all: true },
+        where,
+      });
       out.push({
-        weekStart: weekStartLocalStr,
-        weekEnd: weekEndLocalStr,
-        revenue: row?.revenue ?? 0,
-        count: row?.count ?? 0,
+        weekStart: ws.toISOString(),
+        weekEnd: we.toISOString(),
+        revenue: num(agg._sum.saleValue ?? 0),
+        count: num(agg._count._all ?? 0),
       });
     }
-
     return out;
   }
 
@@ -2195,9 +2065,8 @@ export class ReportingService {
   private async ttfcBySetter(
     from?: string,
     to?: string,
-    tz = 'Europe/Paris',
   ): Promise<Map<string, { avg: number; n: number }>> {
-    const r = toRange(from, to, tz);
+    const r = toRange(from, to);
     if (!r.from || !r.to) return new Map();
 
     // SQL Postgres: 1) first_req = première CallRequest par lead dans la fenêtre
@@ -2211,7 +2080,7 @@ export class ReportingService {
              cr."leadId",
              cr."requestedAt"
       FROM "CallRequest" cr
-      WHERE ${betweenSql(`cr."requestedAt"`, r)}
+      WHERE cr."requestedAt" >= ${r.from} AND cr."requestedAt" <= ${r.to}
       ORDER BY cr."leadId", cr."requestedAt" ASC
     ),
     first_attempt AS (
@@ -2259,7 +2128,7 @@ export class ReportingService {
     leadCreatedFrom?: string,
     leadCreatedTo?: string,
   ): Promise<Map<string, { avg: number; n: number }>> {
-    const r = toRange(from, to, tz);
+    const r = toRange(from, to);
     if (!r.from || !r.to) return new Map();
     const leadSourceSql = buildLeadSourceSql({
       sourcesCsv,
@@ -2279,7 +2148,8 @@ export class ReportingService {
              se."occurredAt" AS "requestedAt"
       FROM "StageEvent" se
       WHERE se."toStage" = ${Prisma.sql`'CALL_REQUESTED'::"LeadStage"`}
-        AND ${betweenSql(`se."occurredAt"`, r)}
+        AND se."occurredAt" >= ${r.from}
+        AND se."occurredAt" <= ${r.to}
         -- 🔥 Filtre heures d'ouverture : 08h <= heure locale < 21h
         AND EXTRACT(HOUR FROM (se."occurredAt" AT TIME ZONE ${tz})) >= 8
         AND EXTRACT(HOUR FROM (se."occurredAt" AT TIME ZONE ${tz})) < 21
@@ -2319,14 +2189,13 @@ export class ReportingService {
   async settersReport(
     from?: string,
     to?: string,
-    tz = 'Europe/Paris',
     sourcesCsv?: string,
     sourcesExcludeCsv?: string,
     tagsCsv?: string,
     leadCreatedFrom?: string,
     leadCreatedTo?: string,
   ): Promise<SetterRow[]> {
-    const r = toRange(from, to, tz);
+    const r = toRange(from, to);
     const spend = await this.sumSpend(r);
     const leadSourceWhere = buildLeadWhere({
       sourcesCsv,
@@ -2354,7 +2223,7 @@ export class ReportingService {
     const ttfcMap = await this.ttfcBySetterViaStages(
       from,
       to,
-      tz,
+      'Europe/Paris',
       sourcesCsv,
       sourcesExcludeCsv,
       tagsCsv,
@@ -2512,7 +2381,7 @@ export class ReportingService {
     leadCreatedFrom?: string,
     leadCreatedTo?: string,
   ): Promise<{ total: number; byDay?: Array<{ day: string; count: number }> }> {
-    const r = toRange(from, to, tz);
+    const r = toRange(from, to);
     const stageEnums = toStages.map((s) => s as LeadStage);
     const leadSourceSql = buildLeadSourceSql({
       sourcesCsv,
@@ -2750,14 +2619,13 @@ export class ReportingService {
   async closersReport(
     from?: string,
     to?: string,
-    tz = 'Europe/Paris',
     sourcesCsv?: string,
     sourcesExcludeCsv?: string,
     tagsCsv?: string,
     leadCreatedFrom?: string,
     leadCreatedTo?: string,
   ): Promise<CloserRow[]> {
-    const r = toRange(from, to, tz);
+    const r = toRange(from, to);
     const leadSourceWhere = buildLeadWhere({
       sourcesCsv,
       sourcesExcludeCsv,
@@ -3000,7 +2868,6 @@ export class ReportingService {
   async spotlightSetters(
     from?: string,
     to?: string,
-    tz = 'Europe/Paris',
     sourcesCsv?: string,
     sourcesExcludeCsv?: string,
     tagsCsv?: string,
@@ -3010,7 +2877,6 @@ export class ReportingService {
     const base = await this.settersReport(
       from,
       to,
-      tz,
       sourcesCsv,
       sourcesExcludeCsv,
       tagsCsv,
@@ -3070,7 +2936,6 @@ export class ReportingService {
   async spotlightClosers(
     from?: string,
     to?: string,
-    tz = 'Europe/Paris',
     sourcesCsv?: string,
     sourcesExcludeCsv?: string,
     tagsCsv?: string,
@@ -3080,7 +2945,6 @@ export class ReportingService {
     const base = await this.closersReport(
       from,
       to,
-      tz,
       sourcesCsv,
       sourcesExcludeCsv,
       tagsCsv,
@@ -3135,14 +2999,13 @@ export class ReportingService {
   async duosReport(
     from?: string,
     to?: string,
-    tz = 'Europe/Paris',
     sourcesCsv?: string,
     sourcesExcludeCsv?: string,
     tagsCsv?: string,
     leadCreatedFrom?: string,
     leadCreatedTo?: string,
   ): Promise<DuoRow[]> {
-    const r = toRange(from, to, tz);
+    const r = toRange(from, to);
     const where = await this.wonFilter(r);
     // on ne garde que les leads avec setter + closer
     where.setterId = { not: null };
@@ -3258,14 +3121,13 @@ export class ReportingService {
   async summary(
     from?: string,
     to?: string,
-    tz = 'Europe/Paris',
     sourcesCsv?: string,
     sourcesExcludeCsv?: string,
     tagsCsv?: string,
     leadCreatedFrom?: string,
     leadCreatedTo?: string,
   ): Promise<SummaryOut> {
-    const r = toRange(from, to, tz);
+    const r = toRange(from, to);
     const leadFilter = buildLeadWhere({
       sourcesCsv,
       sourcesExcludeCsv,
@@ -3278,7 +3140,6 @@ export class ReportingService {
       this.leadsReceived(
         from,
         to,
-        tz,
         sourcesCsv,
         sourcesExcludeCsv,
         tagsCsv,
@@ -3301,7 +3162,6 @@ export class ReportingService {
       this.settersReport(
         from,
         to,
-        tz,
         sourcesCsv,
         sourcesExcludeCsv,
         tagsCsv,
@@ -3311,7 +3171,6 @@ export class ReportingService {
       this.closersReport(
         from,
         to,
-        tz,
         sourcesCsv,
         sourcesExcludeCsv,
         tagsCsv,
@@ -3428,7 +3287,6 @@ export class ReportingService {
     from?: string;
     to?: string;
     mode?: 'entered' | 'current';
-    tz?: string;
     sourcesCsv?: string;
     sourcesExcludeCsv?: string;
     tagsCsv?: string;
@@ -3440,14 +3298,13 @@ export class ReportingService {
       from,
       to,
       mode = 'entered',
-      tz = 'Europe/Paris',
       sourcesCsv,
       sourcesExcludeCsv,
       tagsCsv,
       leadCreatedFrom,
       leadCreatedTo,
     } = args;
-    const r = toRange(from, to, tz);
+    const r = toRange(from, to);
     const unique = Array.from(new Set(keys));
 
     const out: Record<string, number> = {};
@@ -3637,14 +3494,13 @@ export class ReportingService {
   async funnel(
     from?: string,
     to?: string,
-    tz = 'Europe/Paris',
     sourcesCsv?: string,
     sourcesExcludeCsv?: string,
     tagsCsv?: string,
     leadCreatedFrom?: string,
     leadCreatedTo?: string,
   ): Promise<FunnelOut> {
-    const r = toRange(from, to, tz);
+    const r = toRange(from, to);
     const totals = await this.funnelFromStages(
       r,
       sourcesCsv,
@@ -3654,34 +3510,15 @@ export class ReportingService {
       leadCreatedTo,
     );
 
-    const fromLocal = from ?? toLocalDateISO(new Date(), tz);
-    const toLocal = to ?? fromLocal;
-    const startWeek = weekStartLocal(fromLocal);
-    const endWeek = weekStartLocal(toLocal);
-    const start = toUtcDateFromLocal(startWeek);
-    const end = toUtcDateFromLocal(endWeek);
+    const start = mondayOfUTC(r.from ?? new Date());
+    const end = sundayOfUTC(r.to ?? new Date());
 
     const weekly: FunnelWeeklyRow[] = [];
     for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 7)) {
-      const weekStartLocalStr = formatDateOnlyUTC(d);
-      const weekEndLocalStr = addDaysLocal(weekStartLocalStr, 6);
-      const weekStartUtc = startOfDayInTz(weekStartLocalStr, tz);
-      const weekEndUtcExclusive = startOfDayInTz(
-        addDaysLocal(weekStartLocalStr, 7),
-        tz,
-      );
-      const clip = intersectWindow(
-        weekStartUtc,
-        weekEndUtcExclusive,
-        r.from,
-        r.to,
-      );
-      if (!clip) continue;
-      const wRange: Range = {
-        from: clip.start,
-        to: clip.end,
-        endExclusive: true,
-      };
+      const ws = mondayOfUTC(d);
+      const we = sundayOfUTC(d);
+      const clip = intersectWindow(ws, we, r.from, r.to);
+      const wRange: Range = { from: clip?.start, to: clip?.end };
       const wTotals = await this.funnelFromStages(
         wRange,
         sourcesCsv,
@@ -3691,8 +3528,8 @@ export class ReportingService {
         leadCreatedTo,
       );
       weekly.push({
-        weekStart: weekStartLocalStr,
-        weekEnd: weekEndLocalStr,
+        weekStart: ws.toISOString(),
+        weekEnd: we.toISOString(),
         ...wTotals,
       });
     }
@@ -3704,47 +3541,27 @@ export class ReportingService {
   async weeklySeries(
     from?: string,
     to?: string,
-    tz = 'Europe/Paris',
     sourcesCsv?: string,
     sourcesExcludeCsv?: string,
     tagsCsv?: string,
     leadCreatedFrom?: string,
     leadCreatedTo?: string,
   ): Promise<WeeklyOpsRow[]> {
-    const r = toRange(from, to, tz);
+    const r = toRange(from, to);
 
-    const fromLocal = from ?? toLocalDateISO(new Date(), tz);
-    const toLocal = to ?? fromLocal;
-    const startWeek = weekStartLocal(fromLocal);
-    const endWeek = weekStartLocal(toLocal);
-    const start = toUtcDateFromLocal(startWeek);
-    const end = toUtcDateFromLocal(endWeek);
+    const start = mondayOfUTC(r.from ?? new Date());
+    const end = sundayOfUTC(r.to ?? new Date());
     const out: WeeklyOpsRow[] = [];
 
     for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 7)) {
-      const weekStartLocalStr = formatDateOnlyUTC(d);
-      const weekEndLocalStr = addDaysLocal(weekStartLocalStr, 6);
-      const weekStartUtc = startOfDayInTz(weekStartLocalStr, tz);
-      const weekEndUtcExclusive = startOfDayInTz(
-        addDaysLocal(weekStartLocalStr, 7),
-        tz,
-      );
-      const clip = intersectWindow(
-        weekStartUtc,
-        weekEndUtcExclusive,
-        r.from,
-        r.to,
-      );
-      if (!clip) continue;
-      const wRange: Range = {
-        from: clip.start,
-        to: clip.end,
-        endExclusive: true,
-      };
+      const ws = mondayOfUTC(d);
+      const we = sundayOfUTC(d);
+      const clip = intersectWindow(ws, we, r.from, r.to);
+      const wRange: Range = { from: clip?.start, to: clip?.end };
 
       const row: WeeklyOpsRow = {
-        weekStart: weekStartLocalStr,
-        weekEnd: weekEndLocalStr,
+        weekStart: ws.toISOString(),
+        weekEnd: we.toISOString(),
         callRequests: await this.countEnteredInStages(
           ['CALL_REQUESTED'],
           wRange,
@@ -3996,7 +3813,6 @@ export class ReportingService {
   async drillLeadsReceived(args: {
     from?: string;
     to?: string;
-    tz?: string;
     limit: number;
     sourcesCsv?: string;
     sourcesExcludeCsv?: string;
@@ -4004,7 +3820,7 @@ export class ReportingService {
     leadCreatedFrom?: string;
     leadCreatedTo?: string;
   }) {
-    const r = toRange(args.from, args.to, args.tz ?? 'Europe/Paris');
+    const r = toRange(args.from, args.to);
     const rows = await this.prisma.lead.findMany({
       where: {
         ...between('createdAt', r),
@@ -4051,7 +3867,6 @@ export class ReportingService {
   async drillWon(args: {
     from?: string;
     to?: string;
-    tz?: string;
     limit: number;
     sourcesCsv?: string;
     sourcesExcludeCsv?: string;
@@ -4059,7 +3874,7 @@ export class ReportingService {
     leadCreatedFrom?: string;
     leadCreatedTo?: string;
   }) {
-    const r = toRange(args.from, args.to, args.tz ?? 'Europe/Paris');
+    const r = toRange(args.from, args.to);
     const where = await this.wonFilter(r);
     Object.assign(
       where,
@@ -4110,7 +3925,6 @@ export class ReportingService {
   async drillAppointments(args: {
     from?: string;
     to?: string;
-    tz?: string;
     type?: 'RV0' | 'RV1' | 'RV2';
     status?:
       | 'PLANNED'
@@ -4129,7 +3943,7 @@ export class ReportingService {
   }) {
     const { from, to, type, status, userId } = args;
     const limit = args.limit ?? 2000;
-    const r = toRange(from, to, args.tz ?? 'Europe/Paris');
+    const r = toRange(from, to);
 
     // 1) On mappe (type,status) -> liste de LeadStage, alignée sur funnelFromStages
     const stages: LeadStage[] = [];
@@ -4302,7 +4116,6 @@ export class ReportingService {
   async drillCallRequests(args: {
     from?: string;
     to?: string;
-    tz?: string;
     limit: number;
     sourcesCsv?: string;
     sourcesExcludeCsv?: string;
@@ -4310,7 +4123,7 @@ export class ReportingService {
     leadCreatedFrom?: string;
     leadCreatedTo?: string;
   }) {
-    const r = toRange(args.from, args.to, args.tz ?? 'Europe/Paris');
+    const r = toRange(args.from, args.to);
     const rows = await this.prisma.callRequest.findMany({
       where: {
         ...between('requestedAt', r),
@@ -4383,7 +4196,6 @@ export class ReportingService {
   async drillCalls(args: {
     from?: string;
     to?: string;
-    tz?: string;
     answered?: boolean;
     setterNoShow?: boolean;
     limit: number;
@@ -4394,7 +4206,7 @@ export class ReportingService {
     leadCreatedTo?: string;
   }) {
     if (args.answered) {
-      const r = toRange(args.from, args.to, args.tz ?? 'Europe/Paris');
+      const r = toRange(args.from, args.to);
       const rows = await this.prisma.callAttempt.findMany({
         where: {
           outcome: CallOutcome.ANSWERED,
@@ -4467,7 +4279,7 @@ export class ReportingService {
     }
 
     if (args.setterNoShow) {
-      const r = toRange(args.from, args.to, args.tz ?? 'Europe/Paris');
+      const r = toRange(args.from, args.to);
       const rows = await this.prisma.lead.findMany({
         where: {
           stage: LeadStage.SETTER_NO_SHOW,
@@ -4514,7 +4326,7 @@ export class ReportingService {
       return { ok: true, count: items.length, items };
     }
 
-    const r = toRange(args.from, args.to, args.tz ?? 'Europe/Paris');
+    const r = toRange(args.from, args.to);
     const rows = await this.prisma.callAttempt.findMany({
       where: {
         ...between('startedAt', r),
