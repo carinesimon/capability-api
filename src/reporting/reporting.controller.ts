@@ -54,9 +54,11 @@ export class ReportingController {
     @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
     validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
+    const tz = _tz ?? 'Europe/Paris';
     return this.reporting.summary(
       from,
       to,
+      tz,
       sourcesCsv,
       sourcesExcludeCsv,
       tagsCsv,
@@ -164,9 +166,11 @@ export class ReportingController {
     @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
     validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
+    const tz = _tz ?? 'Europe/Paris';
     return this.reporting.leadsReceived(
       from,
       to,
+      tz,
       sourcesCsv,
       sourcesExcludeCsv,
       tagsCsv,
@@ -188,9 +192,11 @@ export class ReportingController {
     @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
     validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
+    const tz = _tz ?? 'Europe/Paris';
     return this.reporting.spotlightSetters(
       from,
       to,
+      tz,
       sourcesCsv,
       sourcesExcludeCsv,
       tagsCsv,
@@ -212,9 +218,11 @@ export class ReportingController {
     @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
     validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
+    const tz = _tz ?? 'Europe/Paris';
     return this.reporting.spotlightClosers(
       from,
       to,
+      tz,
       sourcesCsv,
       sourcesExcludeCsv,
       tagsCsv,
@@ -237,9 +245,11 @@ export class ReportingController {
     @Res() res?: any,
   ) {
     validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
+    const tz = _tz ?? 'Europe/Paris';
     const buf = await this.reporting.exportSpotlightSettersCSV({
       from,
       to,
+      tz,
       sourcesCsv,
       sourcesExcludeCsv,
       tagsCsv,
@@ -267,9 +277,11 @@ export class ReportingController {
     @Res() res?: any,
   ) {
     validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
+    const tz = _tz ?? 'Europe/Paris';
     const buf = await this.reporting.exportSpotlightClosersCSV({
       from,
       to,
+      tz,
       sourcesCsv,
       sourcesExcludeCsv,
       tagsCsv,
@@ -297,9 +309,11 @@ export class ReportingController {
     @Res() res?: any,
   ) {
     validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
+    const tz = _tz ?? 'Europe/Paris';
     const buf = await this.reporting.exportSpotlightSettersPDF({
       from,
       to,
+      tz,
       sourcesCsv,
       sourcesExcludeCsv,
       tagsCsv,
@@ -327,9 +341,11 @@ export class ReportingController {
     @Res() res?: any,
   ) {
     validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
+    const tz = _tz ?? 'Europe/Paris';
     const buf = await this.reporting.exportSpotlightClosersPDF({
       from,
       to,
+      tz,
       sourcesCsv,
       sourcesExcludeCsv,
       tagsCsv,
@@ -356,9 +372,11 @@ export class ReportingController {
     @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
     validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
+    const tz = _tz ?? 'Europe/Paris';
     return this.reporting.salesWeekly(
       from,
       to,
+      tz,
       sourcesCsv,
       sourcesExcludeCsv,
       tagsCsv,
@@ -379,9 +397,11 @@ export class ReportingController {
     @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
     validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
+    const tz = _tz ?? 'Europe/Paris';
     return this.reporting.settersReport(
       from,
       to,
+      tz,
       sourcesCsv,
       sourcesExcludeCsv,
       tagsCsv,
@@ -402,9 +422,11 @@ export class ReportingController {
     @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
     validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
+    const tz = _tz ?? 'Europe/Paris';
     return this.reporting.closersReport(
       from,
       to,
+      tz,
       sourcesCsv,
       sourcesExcludeCsv,
       tagsCsv,
@@ -425,9 +447,11 @@ export class ReportingController {
     @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
     validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
+    const tz = _tz ?? 'Europe/Paris';
     return this.reporting.duosReport(
       from,
       to,
+      tz,
       sourcesCsv,
       sourcesExcludeCsv,
       tagsCsv,
@@ -448,9 +472,11 @@ export class ReportingController {
     @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
     validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
+    const tz = _tz ?? 'Europe/Paris';
     const rows = await this.reporting.weeklySeries(
       from,
       to,
+      tz,
       sourcesCsv,
       sourcesExcludeCsv,
       tagsCsv,
@@ -472,9 +498,11 @@ export class ReportingController {
     @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
     validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
+    const tz = _tz ?? 'Europe/Paris';
     return this.reporting.funnel(
       from,
       to,
+      tz,
       sourcesCsv,
       sourcesExcludeCsv,
       tagsCsv,
@@ -497,6 +525,7 @@ export class ReportingController {
     @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
     validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
+    const tz = _tz ?? 'Europe/Paris';
     const list = (keys || '')
       .split(',')
       .map((k) => k.trim())
@@ -506,6 +535,7 @@ export class ReportingController {
       from,
       to,
       mode,
+      tz,
       sourcesCsv,
       sourcesExcludeCsv,
       tagsCsv,
@@ -528,10 +558,12 @@ export class ReportingController {
     @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
     validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
+    const tz = _tz ?? 'Europe/Paris';
     const limit = Number(limitStr ?? 2000);
     return this.reporting.drillLeadsReceived({
       from,
       to,
+      tz,
       limit,
       sourcesCsv,
       sourcesExcludeCsv,
@@ -554,10 +586,12 @@ export class ReportingController {
     @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
     validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
+    const tz = _tz ?? 'Europe/Paris';
     const limit = Number(limitStr ?? 2000);
     return this.reporting.drillWon({
       from,
       to,
+      tz,
       limit,
       sourcesCsv,
       sourcesExcludeCsv,
@@ -584,10 +618,12 @@ export class ReportingController {
     @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
     validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
+    const tz = _tz ?? 'Europe/Paris';
     const limit = Number(limitStr ?? 2000);
     return this.reporting.drillAppointments({
       from,
       to,
+      tz,
       type,
       status,
       userId,
@@ -613,10 +649,12 @@ export class ReportingController {
     @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
     validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
+    const tz = _tz ?? 'Europe/Paris';
     const limit = Number(limitStr ?? 2000);
     return this.reporting.drillCallRequests({
       from,
       to,
+      tz,
       limit,
       sourcesCsv,
       sourcesExcludeCsv,
@@ -641,12 +679,14 @@ export class ReportingController {
     @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
     validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
+    const tz = _tz ?? 'Europe/Paris';
     const answered = answeredStr === '1' || answeredStr === 'true';
     const setterNoShow = setterNoShowStr === '1' || setterNoShowStr === 'true';
     const limit = Number(limitStr ?? 2000);
     return this.reporting.drillCalls({
       from,
       to,
+      tz,
       answered,
       setterNoShow,
       limit,
@@ -699,9 +739,11 @@ export class ReportingController {
     @Query('leadCreatedTo') leadCreatedTo?: string,
   ) {
     validateLeadCreatedRange(leadCreatedFrom, leadCreatedTo);
+    const tz = _tz ?? 'Europe/Paris';
     return this.reporting.leadsReceived(
       from,
       to,
+      tz,
       sourcesCsv,
       sourcesExcludeCsv,
       tagsCsv,
