@@ -1,4 +1,3 @@
-
 // prospects.controller.ts
 import {
   Body,
@@ -14,7 +13,16 @@ import { ProspectsService } from './prospects.service';
 import { LeadStage, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateProspectEventDto } from './dto/create-prospect-event.dto';
-import { parseCsvIds } from '../common/http/parseCsvIds';
+
+const parseCsv = (value?: string) => {
+  if (!value) return undefined;
+  const items = value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  if (items.length === 0) return undefined;
+  return Array.from(new Set(items));
+};
 
 @Controller('prospects')
 export class ProspectsController {
@@ -42,8 +50,8 @@ export class ProspectsController {
     @Query('setterIds') setterIdsRaw?: string,
     @Query('closerIds') closerIdsRaw?: string,
   ) {
-    const setterIds = parseCsvIds(setterIdsRaw);
-    const closerIds = parseCsvIds(closerIdsRaw);
+    const setterIds = parseCsv(setterIdsRaw);
+    const closerIds = parseCsv(closerIdsRaw);
     return this.svc.getBoard({
       from,
       to,
@@ -169,4 +177,3 @@ export class ProspectsController {
   }
 
 }
-
