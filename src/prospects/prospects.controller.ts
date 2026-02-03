@@ -14,6 +14,16 @@ import { LeadStage, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateProspectEventDto } from './dto/create-prospect-event.dto';
 
+const parseCsv = (value?: string) => {
+  if (!value) return undefined;
+  const items = value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  if (items.length === 0) return undefined;
+  return Array.from(new Set(items));
+};
+
 @Controller('prospects')
 export class ProspectsController {
   constructor(
@@ -37,8 +47,18 @@ export class ProspectsController {
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('limit') limit?: string,
+    @Query('setterIds') setterIdsRaw?: string,
+    @Query('closerIds') closerIdsRaw?: string,
   ) {
-    return this.svc.getBoard({ from, to, limit: Number(limit ?? 200) });
+    const setterIds = parseCsv(setterIdsRaw);
+    const closerIds = parseCsv(closerIdsRaw);
+    return this.svc.getBoard({
+      from,
+      to,
+      limit: Number(limit ?? 200),
+      setterIds,
+      closerIds,
+    });
   }
 
   @Get('columns-config')
