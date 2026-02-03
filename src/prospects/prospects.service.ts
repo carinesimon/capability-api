@@ -154,7 +154,14 @@ type OpsColumn = { key: PipelineMetricKey; label: string; count: number };
    ====================  EXISTANT  =========================
    ========================================================= */
 
-type BoardArgs = { from?: string; to?: string; limit?: number };
+type BoardArgs = {
+  from?: string;
+  to?: string;
+  limit?: number;
+  setterIds?: string[];
+  closerIds?: string[];
+};
+
 type MoveStageBody = { stage: LeadStage; saleValue?: number; confirmSame?: boolean };
 
 type EditLeadBody = {
@@ -524,7 +531,13 @@ async putColumnsConfig(payload: Array<{
     };
   }
 
-  async getBoard({ from, to, limit = 200 }: BoardArgs) {
+  async getBoard({ from, to, limit = 200, setterIds, closerIds }: BoardArgs) {
+    const base = this.buildRangeOr(from, to);
+    const where = {
+      ...base,
+      ...(setterIds?.length ? { setterId: { in: setterIds } } : {}),
+      ...(closerIds?.length ? { closerId: { in: closerIds } } : {}),
+    };
     const where = this.buildRangeOr(from, to);
 
     const leads = await this.prisma.lead.findMany({
@@ -1293,4 +1306,3 @@ async putColumnsConfig(payload: Array<{
     });
   }
 }
-
