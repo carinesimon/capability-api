@@ -246,7 +246,7 @@ export class GhlService {
       const n = Number(value);
       return Number.isFinite(n) ? n : undefined;
     };
-    const saleValueFromPayload = toFiniteNumber(args.saleValue);
+    const saleValueFromPayload = toFiniteNumber(args.saleValue);x
     const amountFromPayload = toFiniteNumber(args.amount);
     const resolvedSaleValue = saleValueFromPayload ?? amountFromPayload;
     const lead = await this.findLeadByEmailOrGhlId(
@@ -290,7 +290,13 @@ export class GhlService {
       if (Object.values(LeadStage).includes(mapped as LeadStage)) {
         update.stage = mapped;
         update.stageUpdatedAt = new Date();
-        if (mapped === 'WON' && resolvedSaleValue != null) update.saleValue = resolvedSaleValue;
+        if (
+          mapped === 'WON' &&
+          resolvedSaleValue != null &&
+          lead.saleValue == null
+        ) {
+          update.saleValue = resolvedSaleValue;
+        }
         await this.safeRecordStageEntry({
           leadId: lead.id,
           fromStage: (lead.stage as any) ?? 'LEADS_RECEIVED',
@@ -299,6 +305,13 @@ export class GhlService {
           externalId: args.eventId ?? args.ghlContactId ?? args.contactEmail ?? undefined,
         });
       }
+    }
+    if (
+      resolvedSaleValue != null &&
+      lead.stage === 'WON' &&
+      lead.saleValue == null
+    ) {
+      update.saleValue = resolvedSaleValue;
     }
     if (args.ghlContactId && !lead.ghlContactId) update.ghlContactId = args.ghlContactId;
 
